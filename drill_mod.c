@@ -5,68 +5,68 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/debugfs.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #define ACT_SIZE 5
 
-enum msuhack_act_t {
+enum drill_act_t {
 	MSUHACK_ACT_NONE = 0,
 	MSUHACK_ACT_ALLOC = 1,
 	MSUHACK_ACT_CALLBACK = 2,
 	MSUHACK_ACT_FREE = 3
 };
 
-struct msuhack_t {
+struct drill_t {
 	struct dentry *dir;
-	struct msuhack_item_t *item;
+	struct drill_item_t *item;
 };
 
-static struct msuhack_t msuhack; /* initialized by zeros */
+static struct drill_t drill; /* initialized by zeros */
 
 #define MSUHACK_ITEM_SIZE 7000
 
-struct msuhack_item_t {
+struct drill_item_t {
 	u32 foo;
 	void (*callback)(void);
 	char bar[1];
 };
 
-static void msuhack_callback(void) {
-	pr_notice("normal msuhack_callback %p!\n", msuhack_callback);
+static void drill_callback(void) {
+	pr_notice("normal drill_callback %p!\n", drill_callback);
 }
 
-static int msuhack_act_exec(long act)
+static int drill_act_exec(long act)
 {
 	int ret = 0;
 
 	switch (act) {
 	case MSUHACK_ACT_ALLOC:
-		msuhack.item = kmalloc(MSUHACK_ITEM_SIZE, GFP_KERNEL);
-		if (msuhack.item == NULL) {
-			pr_err("msuhack: not enough memory for item\n");
+		drill.item = kmalloc(MSUHACK_ITEM_SIZE, GFP_KERNEL);
+		if (drill.item == NULL) {
+			pr_err("drill: not enough memory for item\n");
 			ret = -ENOMEM;
 			break;
 		}
 
-		pr_notice("msuhack: kmalloc'ed item at %p (size %d)\n",
-					msuhack.item, MSUHACK_ITEM_SIZE);
+		pr_notice("drill: kmalloc'ed item at %p (size %d)\n",
+					drill.item, MSUHACK_ITEM_SIZE);
 
-		msuhack.item->callback = msuhack_callback;
+		drill.item->callback = drill_callback;
 		break;
 
 	case MSUHACK_ACT_CALLBACK:
-		pr_notice("msuhack: exec callback %p for item %p\n",
-					msuhack.item->callback, msuhack.item);
-		msuhack.item->callback(); /* No check, BAD BAD BAD */
+		pr_notice("drill: exec callback %p for item %p\n",
+					drill.item->callback, drill.item);
+		drill.item->callback(); /* No check, BAD BAD BAD */
 		break;
 
 	case MSUHACK_ACT_FREE:
-		pr_notice("msuhack: free item at %p\n", msuhack.item);
-		kfree(msuhack.item);
+		pr_notice("drill: free item at %p\n", drill.item);
+		kfree(drill.item);
 		break;
 
 	default:
-		pr_err("msuhack: invalid act %ld\n", act);
+		pr_err("drill: invalid act %ld\n", act);
 		ret = -EINVAL;
 		break;
 	}
@@ -74,7 +74,7 @@ static int msuhack_act_exec(long act)
 	return ret;
 }
 
-static ssize_t msuhack_act_write(struct file *file, const char __user *user_buf,
+static ssize_t drill_act_write(struct file *file, const char __user *user_buf,
 						size_t count, loff_t *ppos)
 {
 	ssize_t ret = 0;
@@ -88,55 +88,55 @@ static ssize_t msuhack_act_write(struct file *file, const char __user *user_buf,
 		size = count;
 
 	if (copy_from_user(&buf, user_buf, size)) {
-		pr_err("msuhack: act_write: copy_from_user failed\n");
+		pr_err("drill: act_write: copy_from_user failed\n");
 		return -EFAULT;
 	}
 
 	buf[size] = '\0';
 	new_act = simple_strtol(buf, NULL, 0);
 
-	ret = msuhack_act_exec(new_act);
+	ret = drill_act_exec(new_act);
 	if (ret == 0)
 		ret = count; /* success, claim we got the whole input */
 
 	return ret;
 }
 
-static const struct file_operations msuhack_act_fops = {
-	.write = msuhack_act_write,
+static const struct file_operations drill_act_fops = {
+	.write = drill_act_write,
 };
 
-static int __init msuhack_init(void)
+static int __init drill_init(void)
 {
 	struct dentry *act_file = NULL;
 
-	pr_notice("msuhack: start hacking\n");
+	pr_notice("drill: start hacking\n");
 
-	msuhack.dir = debugfs_create_dir("msuhack", NULL);
-	if (msuhack.dir == ERR_PTR(-ENODEV) || msuhack.dir == NULL) {
-		pr_err("creating msuhack dir failed\n");
+	drill.dir = debugfs_create_dir("drill", NULL);
+	if (drill.dir == ERR_PTR(-ENODEV) || drill.dir == NULL) {
+		pr_err("creating drill dir failed\n");
 		return -ENOMEM;
 	}
 
-	act_file = debugfs_create_file("msuhack_act", S_IWUGO,
-					msuhack.dir, NULL, &msuhack_act_fops);
+	act_file = debugfs_create_file("drill_act", S_IWUGO,
+					drill.dir, NULL, &drill_act_fops);
 	if (act_file == ERR_PTR(-ENODEV) || act_file == NULL) {
-		pr_err("creating msuhack_act file failed\n");
-		debugfs_remove_recursive(msuhack.dir);
+		pr_err("creating drill_act file failed\n");
+		debugfs_remove_recursive(drill.dir);
 		return -ENOMEM;
 	}
 
 	return 0;
 }
 
-static void __exit msuhack_exit(void)
+static void __exit drill_exit(void)
 {
-	pr_notice("msuhack: stop hacking\n");
-	debugfs_remove_recursive(msuhack.dir);
+	pr_notice("drill: stop hacking\n");
+	debugfs_remove_recursive(drill.dir);
 }
 
-module_init(msuhack_init)
-module_exit(msuhack_exit)
+module_init(drill_init)
+module_exit(drill_exit)
 
 MODULE_AUTHOR("Alexander Popov <alex.popov@linux.com>");
 MODULE_DESCRIPTION("The module for kernel exploiting experiments");
