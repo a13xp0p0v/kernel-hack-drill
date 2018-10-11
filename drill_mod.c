@@ -32,7 +32,8 @@ struct drill_item_t {
 };
 
 static void drill_callback(void) {
-	pr_notice("normal drill_callback %p!\n", drill_callback);
+	pr_notice("normal drill_callback %lx!\n",
+				(unsigned long)drill_callback);
 }
 
 static int drill_act_exec(long act)
@@ -48,20 +49,22 @@ static int drill_act_exec(long act)
 			break;
 		}
 
-		pr_notice("drill: kmalloc'ed item at %p (size %d)\n",
-					drill.item, MSUHACK_ITEM_SIZE);
+		pr_notice("drill: kmalloc'ed item at %lx (size %d)\n",
+				(unsigned long)drill.item, MSUHACK_ITEM_SIZE);
 
 		drill.item->callback = drill_callback;
 		break;
 
 	case MSUHACK_ACT_CALLBACK:
-		pr_notice("drill: exec callback %p for item %p\n",
-					drill.item->callback, drill.item);
+		pr_notice("drill: exec callback %lx for item %lx\n",
+					(unsigned long)drill.item->callback,
+					(unsigned long)drill.item);
 		drill.item->callback(); /* No check, BAD BAD BAD */
 		break;
 
 	case MSUHACK_ACT_FREE:
-		pr_notice("drill: free item at %p\n", drill.item);
+		pr_notice("drill: free item at %lx\n",
+					(unsigned long)drill.item);
 		kfree(drill.item);
 		break;
 
