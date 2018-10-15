@@ -23,7 +23,7 @@ struct drill_t {
 
 static struct drill_t drill; /* initialized by zeros */
 
-#define MSUHACK_ITEM_SIZE 7000
+#define MSUHACK_ITEM_SIZE 3300
 
 struct drill_item_t {
 	u32 foo;
