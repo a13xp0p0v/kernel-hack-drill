@@ -13,7 +13,8 @@ enum drill_act_t {
 	DRILL_ACT_NONE = 0,
 	DRILL_ACT_ALLOC = 1,
 	DRILL_ACT_CALLBACK = 2,
-	DRILL_ACT_FREE = 3
+	DRILL_ACT_FREE = 3,
+	DRILL_ACT_RESET = 4
 };
 
 struct drill_t {
@@ -66,6 +67,11 @@ static int drill_act_exec(long act)
 		pr_notice("drill: free item at %lx\n",
 					(unsigned long)drill.item);
 		kfree(drill.item);
+		break;
+
+	case DRILL_ACT_RESET:
+		drill.item = NULL;
+		pr_notice("drill: set item ptr to NULL\n");
 		break;
 
 	default:
