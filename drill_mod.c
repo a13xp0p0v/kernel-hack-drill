@@ -10,10 +10,10 @@
 #define ACT_SIZE 5
 
 enum drill_act_t {
-	MSUHACK_ACT_NONE = 0,
-	MSUHACK_ACT_ALLOC = 1,
-	MSUHACK_ACT_CALLBACK = 2,
-	MSUHACK_ACT_FREE = 3
+	DRILL_ACT_NONE = 0,
+	DRILL_ACT_ALLOC = 1,
+	DRILL_ACT_CALLBACK = 2,
+	DRILL_ACT_FREE = 3
 };
 
 struct drill_t {
@@ -23,7 +23,7 @@ struct drill_t {
 
 static struct drill_t drill; /* initialized by zeros */
 
-#define MSUHACK_ITEM_SIZE 3300
+#define DRILL_ITEM_SIZE 3300
 
 struct drill_item_t {
 	u32 foo;
@@ -41,8 +41,8 @@ static int drill_act_exec(long act)
 	int ret = 0;
 
 	switch (act) {
-	case MSUHACK_ACT_ALLOC:
-		drill.item = kmalloc(MSUHACK_ITEM_SIZE, GFP_KERNEL);
+	case DRILL_ACT_ALLOC:
+		drill.item = kmalloc(DRILL_ITEM_SIZE, GFP_KERNEL);
 		if (drill.item == NULL) {
 			pr_err("drill: not enough memory for item\n");
 			ret = -ENOMEM;
@@ -50,19 +50,19 @@ static int drill_act_exec(long act)
 		}
 
 		pr_notice("drill: kmalloc'ed item at %lx (size %d)\n",
-				(unsigned long)drill.item, MSUHACK_ITEM_SIZE);
+				(unsigned long)drill.item, DRILL_ITEM_SIZE);
 
 		drill.item->callback = drill_callback;
 		break;
 
-	case MSUHACK_ACT_CALLBACK:
+	case DRILL_ACT_CALLBACK:
 		pr_notice("drill: exec callback %lx for item %lx\n",
 					(unsigned long)drill.item->callback,
 					(unsigned long)drill.item);
 		drill.item->callback(); /* No check, BAD BAD BAD */
 		break;
 
-	case MSUHACK_ACT_FREE:
+	case DRILL_ACT_FREE:
 		pr_notice("drill: free item at %lx\n",
 					(unsigned long)drill.item);
 		kfree(drill.item);
