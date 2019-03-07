@@ -10,5 +10,5 @@ echo 1 > /sys/kernel/debug/tracing/events/kmem/kmem_cache_alloc/enable
 echo 1 > /sys/kernel/debug/tracing/events/kmem/kmem_cache_alloc_node/enable
 echo 1 > /sys/kernel/debug/tracing/events/kmem/kmem_cache_free/enable
 echo 1 > /sys/kernel/debug/tracing/events/kmem/kfree/enable
-exec ./drill_exploit
+exec ./drill_exploit_uaf
 
