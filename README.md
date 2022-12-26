@@ -16,4 +16,10 @@ and run it with `pti=off nokaslr`.
 
 Have fun!
 
+## Repository mirrors
+
+ - At Codeberg: [https://codeberg.org/a13xp0p0v/kernel-hack-drill](https://codeberg.org/a13xp0p0v/kernel-hack-drill)
+ - At GitFlic: [https://gitflic.ru/project/a13xp0p0v/kernel-hack-drill](https://gitflic.ru/project/a13xp0p0v/kernel-hack-drill)
+
+
 [1]: https://bugs.chromium.org/p/project-zero/issues/detail?id=1792&desc=2
