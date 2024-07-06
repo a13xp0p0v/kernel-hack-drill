@@ -14,12 +14,14 @@ __Contents:__
 N.B. Only basic exploit techniques here. So compile your kernel with `x86_64_defconfig`
 and run it with `pti=off nokaslr`.
 
+License: GPL-3.0.
+
 Have fun!
 
 ## Repositories
 
- - Main at GitHub: <https://github.com/a13xp0p0v/kernel-hack-drill>
- - Mirror at Codeberg: <https://codeberg.org/a13xp0p0v/kernel-hack-drill>
- - Mirror at GitFlic: <https://gitflic.ru/project/a13xp0p0v/kernel-hack-drill>
+ - At GitHub: <https://github.com/a13xp0p0v/kernel-hack-drill>
+ - At Codeberg: <https://codeberg.org/a13xp0p0v/kernel-hack-drill> (go there if something goes wrong with GitHub)
+ - At GitFlic: <https://gitflic.ru/project/a13xp0p0v/kernel-hack-drill>
 
 [1]: https://bugs.chromium.org/p/project-zero/issues/detail?id=1792&desc=2
