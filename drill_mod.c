@@ -4,8 +4,8 @@
 
 #include <linux/module.h>
 #include <linux/slab.h>
-#include <linux/debugfs.h>
 #include <linux/uaccess.h>
+#include <linux/proc_fs.h>
 
 #define ACT_SIZE 5
 
@@ -18,7 +18,7 @@ enum drill_act_t {
 };
 
 struct drill_t {
-	struct dentry *dir;
+	struct proc_dir_entry *proc_entry;
 	struct drill_item_t *item;
 };
 
@@ -111,29 +111,20 @@ static ssize_t drill_act_write(struct file *file, const char __user *user_buf,
 	return ret;
 }
 
-static const struct file_operations drill_act_fops = {
-	.write = drill_act_write,
+static const struct proc_ops drill_act_fops = {
+	.proc_write = drill_act_write,
 };
 
 static int __init drill_init(void)
 {
-	struct dentry *act_file = NULL;
+	drill.proc_entry = proc_create("drill_act", S_IWUSR | S_IWGRP | S_IWOTH,
+				       NULL, &drill_act_fops);
+	if (!drill.proc_entry) {
+		printk("failed to create /proc/drill_act");
+		return -ENOMEM;
+	}
 
 	pr_notice("drill: start hacking\n");
-
-	drill.dir = debugfs_create_dir("drill", NULL);
-	if (drill.dir == ERR_PTR(-ENODEV) || drill.dir == NULL) {
-		pr_err("creating drill dir failed\n");
-		return -ENOMEM;
-	}
-
-	act_file = debugfs_create_file("drill_act", S_IWUGO,
-					drill.dir, NULL, &drill_act_fops);
-	if (act_file == ERR_PTR(-ENODEV) || act_file == NULL) {
-		pr_err("creating drill_act file failed\n");
-		debugfs_remove_recursive(drill.dir);
-		return -ENOMEM;
-	}
 
 	return 0;
 }
@@ -141,7 +132,7 @@ static int __init drill_init(void)
 static void __exit drill_exit(void)
 {
 	pr_notice("drill: stop hacking\n");
-	debugfs_remove_recursive(drill.dir);
+	proc_remove(drill.proc_entry);
 }
 
 module_init(drill_init)
