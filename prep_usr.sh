@@ -3,5 +3,4 @@ set -x
 
 insmod drill_mod.ko
 
-su -l a13x
-
+su -l user
