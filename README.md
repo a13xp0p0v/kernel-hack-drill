@@ -5,14 +5,15 @@ Only basic methods. Just for fun.
 
 __Contents:__
 
-  - __drill_mod.c__ - a small Linux kernel module with nice vulnerabilities.
-  You can interact with it via a simple debugfs interface.
-  - __drill_exploit_uaf.c__ - a basic use-after-free exploit.
-  - __drill_exploit_nullderef.c__ - a basic null-ptr-deref exploit, which uses 
-  wonderful [mmap_min_addr bypass][1] by Jann Horn.
+  - __drill_mod.c__ - a small Linux kernel module with nice vulnerabilities. You can interact with it via a simple procfs interface.
+  - __drill_exploit_uaf_callback.c__ - a basic use-after-free exploit overwriting a callback in the `drill_item_t` struct.
+  - __drill_exploit_nullderef.c__ - a basic null-ptr-deref exploit, which uses wonderful [mmap_min_addr bypass][1] by Jann Horn.
 
-N.B. Only basic exploit techniques here. So compile your kernel with `x86_64_defconfig`
-and run it with `pti=off nokaslr`.
+N.B. Only basic exploit techniques here.
+
+So compile your kernel with `x86_64_defconfig` and run it with `pti=off nokaslr` boot arguments.
+
+Also don't forget to run `qemu-system-x86_64` with `-cpu qemu64,-smep,-smap`.
 
 License: GPL-3.0.
 
