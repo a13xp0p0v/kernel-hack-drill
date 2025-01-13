@@ -7,14 +7,22 @@
 #include <linux/uaccess.h>
 #include <linux/proc_fs.h>
 
-#define ACT_SIZE 5
+/*
+ * A buffer size for storing string "act arg1 arg2", where
+ *  - act is 1 symbol,
+ *  - arg1 is maximum 18 symbols (0xffffffffffffffff),
+ *  - arg2 is maximum 18 symbols (0xffffffffffffffff),
+ *  - two spaces and null byte at the end.
+ */
+#define ACT_SIZE 40
 
 enum drill_act_t {
 	DRILL_ACT_NONE = 0,
 	DRILL_ACT_ALLOC = 1,
 	DRILL_ACT_CALLBACK = 2,
-	DRILL_ACT_FREE = 3,
-	DRILL_ACT_RESET = 4
+	DRILL_ACT_SAVE_VAL = 3,
+	DRILL_ACT_FREE = 4,
+	DRILL_ACT_RESET = 5
 };
 
 struct drill_t {
@@ -37,7 +45,7 @@ static void drill_callback(void) {
 				(unsigned long)drill_callback);
 }
 
-static int drill_act_exec(long act)
+static int drill_act_exec(long act, char *arg1_str, char *arg2_str)
 {
 	int ret = 0;
 
@@ -61,6 +69,12 @@ static int drill_act_exec(long act)
 					(unsigned long)drill.item->callback,
 					(unsigned long)drill.item);
 		drill.item->callback(); /* No check, BAD BAD BAD */
+		break;
+
+	case DRILL_ACT_SAVE_VAL:
+		pr_notice("drill: try to save val '%s' at offset '%s' for item %lx\n",
+				arg1_str, arg2_str, (unsigned long)drill.item);
+
 		break;
 
 	case DRILL_ACT_FREE:
@@ -88,8 +102,12 @@ static ssize_t drill_act_write(struct file *file, const char __user *user_buf,
 {
 	ssize_t ret = 0;
 	char buf[ACT_SIZE] = { 0 };
-	size_t size = ACT_SIZE - 1;
-	long new_act = 0;
+	size_t size = ACT_SIZE - 1; /* last byte will be \0 anyway */
+	char *buf_ptr = buf;
+	char *act_str = NULL;
+	char *arg1_str = NULL;
+	char *arg2_str = NULL;
+	unsigned long act = 0;
 
 	BUG_ON(*ppos != 0);
 
@@ -101,10 +119,20 @@ static ssize_t drill_act_write(struct file *file, const char __user *user_buf,
 		return -EFAULT;
 	}
 
-	buf[size] = '\0';
-	new_act = simple_strtol(buf, NULL, 0);
 
-	ret = drill_act_exec(new_act);
+	act_str = strsep(&buf_ptr, " ");
+
+	arg1_str = strsep(&buf_ptr, " ");
+
+	arg2_str = strsep(&buf_ptr, " ");
+
+	ret = kstrtoul(act_str, 10, &act);
+	if (ret) {
+		pr_err("drill: act_write: parsing act failed\n");
+		return ret;
+	}
+
+	ret = drill_act_exec(act, arg1_str, arg2_str);
 	if (ret == 0)
 		ret = count; /* success, claim we got the whole input */
 
