@@ -25,7 +25,7 @@ struct drill_item_t {
 	unsigned long foo;
 	unsigned long bar;
 	void (*callback)(void);
-	unsigned long data[]; /* C99 flexible array */
+	char data[]; /* C99 flexible array */
 };
 
 #endif	/* _DRILL_H */

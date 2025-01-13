@@ -26,7 +26,7 @@ static int drill_act_exec(long act, char *arg1_str, char *arg2_str)
 
 	switch (act) {
 	case DRILL_ACT_ALLOC:
-		drill.item = kmalloc(DRILL_ITEM_SIZE, GFP_KERNEL);
+		drill.item = kzalloc(DRILL_ITEM_SIZE, GFP_KERNEL);
 		if (drill.item == NULL) {
 			pr_err("drill: not enough memory for item\n");
 			ret = -ENOMEM;
@@ -36,6 +36,8 @@ static int drill_act_exec(long act, char *arg1_str, char *arg2_str)
 		pr_notice("drill: kmalloc'ed item at 0x%lx (size %d)\n",
 				(unsigned long)drill.item, DRILL_ITEM_SIZE);
 
+		drill.item->foo = 0x4141414141414141lu;
+		drill.item->bar = 0x4242424242424242lu;
 		drill.item->callback = drill_callback;
 		break;
 
@@ -47,9 +49,40 @@ static int drill_act_exec(long act, char *arg1_str, char *arg2_str)
 		break;
 
 	case DRILL_ACT_SAVE_VAL:
-		pr_notice("drill: try to save val '%s' at offset '%s' for item %lx\n",
-				arg1_str, arg2_str, (unsigned long)drill.item);
+		unsigned long val = 0;
+		unsigned long offset = 0;
+		unsigned long *data_addr = NULL;
 
+		ret = kstrtoul(arg1_str, 0, &val);
+		if (ret) {
+			pr_err("drill: save_val: bad value %s\n", arg1_str);
+			ret = -EINVAL;
+			break;
+		}
+
+		ret = kstrtoul(arg2_str, 0, &offset);
+		if (ret) {
+			pr_err("drill: save_val: bad offset %s\n", arg2_str);
+			ret = -EINVAL;
+			break;
+		}
+
+		if (offset > DRILL_ITEM_SIZE -
+				sizeof(struct drill_item_t) - sizeof(val)) {
+			pr_err("drill: save_val: oob offset %ld\n", offset);
+			ret = -EINVAL;
+			break;
+		}
+
+		data_addr = (unsigned long *)(drill.item->data + offset);
+		pr_notice("drill: save val 0x%lx to item 0x%lx at data offset %ld (at 0x%lx)\n",
+					val, (unsigned long)drill.item,
+					offset, (unsigned long)data_addr);
+		*data_addr = val;
+
+		pr_notice("drill: item dump:\n");
+		print_hex_dump(KERN_INFO, "drill: ", DUMP_PREFIX_ADDRESS,
+			       16, 1, drill.item, DRILL_ITEM_SIZE, false);
 		break;
 
 	case DRILL_ACT_FREE:
@@ -93,7 +126,6 @@ static ssize_t drill_act_write(struct file *file, const char __user *user_buf,
 		pr_err("drill: act_write: copy_from_user failed\n");
 		return -EFAULT;
 	}
-
 
 	act_str = strsep(&buf_ptr, " ");
 
