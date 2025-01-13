@@ -6,24 +6,7 @@
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/proc_fs.h>
-
-/*
- * A buffer size for storing string "act arg1 arg2", where
- *  - act is 1 symbol,
- *  - arg1 is maximum 18 symbols (0xffffffffffffffff),
- *  - arg2 is maximum 18 symbols (0xffffffffffffffff),
- *  - two spaces and null byte at the end.
- */
-#define ACT_SIZE 40
-
-enum drill_act_t {
-	DRILL_ACT_NONE = 0,
-	DRILL_ACT_ALLOC = 1,
-	DRILL_ACT_CALLBACK = 2,
-	DRILL_ACT_SAVE_VAL = 3,
-	DRILL_ACT_FREE = 4,
-	DRILL_ACT_RESET = 5
-};
+#include "drill.h"
 
 struct drill_t {
 	struct proc_dir_entry *proc_entry;
@@ -31,14 +14,6 @@ struct drill_t {
 };
 
 static struct drill_t drill; /* initialized by zeros */
-
-#define DRILL_ITEM_SIZE 3300
-
-struct drill_item_t {
-	u32 foo;
-	void (*callback)(void);
-	char bar[1];
-};
 
 static void drill_callback(void) {
 	pr_notice("normal drill_callback %lx!\n",
@@ -101,8 +76,8 @@ static ssize_t drill_act_write(struct file *file, const char __user *user_buf,
 						size_t count, loff_t *ppos)
 {
 	ssize_t ret = 0;
-	char buf[ACT_SIZE] = { 0 };
-	size_t size = ACT_SIZE - 1; /* last byte will be \0 anyway */
+	char buf[DRILL_ACT_SIZE] = { 0 };
+	size_t size = DRILL_ACT_SIZE - 1; /* last byte will be \0 anyway */
 	char *buf_ptr = buf;
 	char *act_str = NULL;
 	char *arg1_str = NULL;
