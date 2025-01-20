@@ -2,13 +2,14 @@
 #define _DRILL_H
 
 /*
- * A buffer size for storing string "act arg1 arg2", where
+ * A buffer size for storing string "act arg1 arg2 arg3", where
  *  - act is 1 symbol,
  *  - arg1 is maximum 18 symbols (0xffffffffffffffff),
  *  - arg2 is maximum 18 symbols (0xffffffffffffffff),
- *  - two spaces and null byte at the end.
+ *  - arg3 is maximum 18 symbols (0xffffffffffffffff),
+ *  - three spaces and null byte at the end.
  */
-#define DRILL_ACT_SIZE 40
+#define DRILL_ACT_SIZE 59
 
 enum drill_act_t {
 	DRILL_ACT_NONE = 0,
@@ -27,5 +28,7 @@ struct drill_item_t {
 	void (*callback)(void);
 	char data[]; /* C99 flexible array */
 };
+
+#define DRILL_N 1024
 
 #endif	/* _DRILL_H */

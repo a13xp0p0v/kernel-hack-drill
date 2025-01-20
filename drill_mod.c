@@ -10,7 +10,7 @@
 
 struct drill_t {
 	struct proc_dir_entry *proc_entry;
-	struct drill_item_t *item;
+	struct drill_item_t **items;
 };
 
 static struct drill_t drill; /* initialized by zeros */
@@ -20,32 +20,51 @@ static void drill_callback(void) {
 				(unsigned long)drill_callback);
 }
 
-static int drill_act_exec(long act, char *arg1_str, char *arg2_str)
+static int drill_act_exec(long act,
+			  char *arg1_str,
+			  char *arg2_str,
+			  char *arg3_str)
 {
 	int ret = 0;
+	unsigned long n = 0;
+
+	if (!arg1_str) {
+		pr_err("drill: item number is missing\n");
+		return -EINVAL;
+	}
+
+	ret = kstrtoul(arg1_str, 0, &n);
+	if (ret) {
+		pr_err("drill: invalid item number %s\n", arg1_str);
+		return -EINVAL;
+	}
+	if (n >= DRILL_N) {
+		pr_err("drill: bad item number %lu (max %d)\n", n, DRILL_N - 1);
+		return -EINVAL;
+	}
+	pr_notice("drill: gonna work with item %lu\n", n);
 
 	switch (act) {
 	case DRILL_ACT_ALLOC:
-		drill.item = kzalloc(DRILL_ITEM_SIZE, GFP_KERNEL);
-		if (drill.item == NULL) {
+		drill.items[n] = kzalloc(DRILL_ITEM_SIZE, GFP_KERNEL);
+		if (drill.items[n] == NULL) {
 			pr_err("drill: not enough memory for item\n");
-			ret = -ENOMEM;
-			break;
+			return -ENOMEM;
 		}
 
-		pr_notice("drill: kmalloc'ed item at 0x%lx (size %d)\n",
-				(unsigned long)drill.item, DRILL_ITEM_SIZE);
+		pr_notice("drill: kmalloc'ed item %lu (0x%lx, size %d)\n",
+			  n, (unsigned long)drill.items[n], DRILL_ITEM_SIZE);
 
-		drill.item->foo = 0x4141414141414141lu;
-		drill.item->bar = 0x4242424242424242lu;
-		drill.item->callback = drill_callback;
+		drill.items[n]->foo = 0x4141414141414141lu;
+		drill.items[n]->bar = 0x4242424242424242lu;
+		drill.items[n]->callback = drill_callback;
 		break;
 
 	case DRILL_ACT_CALLBACK:
-		pr_notice("drill: exec callback 0x%lx for item 0x%lx\n",
-					(unsigned long)drill.item->callback,
-					(unsigned long)drill.item);
-		drill.item->callback(); /* No check, BAD BAD BAD */
+		pr_notice("drill: exec callback 0x%lx for item %lu (0x%lx)\n",
+					(unsigned long)drill.items[n]->callback,
+					n, (unsigned long)drill.items[n]);
+		drill.items[n]->callback(); /* No check, BAD BAD BAD */
 		break;
 
 	case DRILL_ACT_SAVE_VAL:
@@ -53,53 +72,59 @@ static int drill_act_exec(long act, char *arg1_str, char *arg2_str)
 		unsigned long offset = 0;
 		unsigned long *data_addr = NULL;
 
-		ret = kstrtoul(arg1_str, 0, &val);
-		if (ret) {
-			pr_err("drill: save_val: bad value %s\n", arg1_str);
-			ret = -EINVAL;
-			break;
+		if (!arg2_str) {
+			pr_err("drill: save_val: missing value\n");
+			return -EINVAL;
 		}
 
-		ret = kstrtoul(arg2_str, 0, &offset);
+		if (!arg3_str) {
+			pr_err("drill: save_val: missing offset\n");
+			return -EINVAL;
+		}
+
+		ret = kstrtoul(arg2_str, 0, &val);
 		if (ret) {
-			pr_err("drill: save_val: bad offset %s\n", arg2_str);
-			ret = -EINVAL;
-			break;
+			pr_err("drill: save_val: bad value %s\n", arg2_str);
+			return -EINVAL;
+		}
+
+		ret = kstrtoul(arg3_str, 0, &offset);
+		if (ret) {
+			pr_err("drill: save_val: bad offset %s\n", arg3_str);
+			return -EINVAL;
 		}
 
 		if (offset > DRILL_ITEM_SIZE -
 				sizeof(struct drill_item_t) - sizeof(val)) {
 			pr_err("drill: save_val: oob offset %ld\n", offset);
-			ret = -EINVAL;
-			break;
+			return -EINVAL;
 		}
 
-		data_addr = (unsigned long *)(drill.item->data + offset);
-		pr_notice("drill: save val 0x%lx to item 0x%lx at data offset %ld (at 0x%lx)\n",
-					val, (unsigned long)drill.item,
+		data_addr = (unsigned long *)(drill.items[n]->data + offset);
+		pr_notice("drill: save val 0x%lx to item %lu (0x%lx) at data offset %ld (0x%lx)\n",
+					val, n, (unsigned long)drill.items[n],
 					offset, (unsigned long)data_addr);
-		*data_addr = val;
+		*data_addr = val;  /* No check, BAD BAD BAD */
 
-		pr_notice("drill: item dump:\n");
+		pr_notice("drill: item %lu dump:\n", n);
 		print_hex_dump(KERN_INFO, "drill: ", DUMP_PREFIX_ADDRESS,
-			       16, 1, drill.item, DRILL_ITEM_SIZE, false);
+			       16, 1, drill.items[n], DRILL_ITEM_SIZE, false);
 		break;
 
 	case DRILL_ACT_FREE:
-		pr_notice("drill: free item at 0x%lx\n",
-					(unsigned long)drill.item);
-		kfree(drill.item);
+		pr_notice("drill: free item %lu (0x%lx)\n",
+					n, (unsigned long)drill.items[n]);
+		kfree(drill.items[n]);  /* No check, BAD BAD BAD */
 		break;
 
 	case DRILL_ACT_RESET:
-		drill.item = NULL;
-		pr_notice("drill: set item ptr to NULL\n");
+		drill.items[n] = NULL;
+		pr_notice("drill: set item %lu ptr to NULL\n", n);
 		break;
 
 	default:
 		pr_err("drill: invalid act %ld\n", act);
-		ret = -EINVAL;
-		break;
+		return -EINVAL;
 	}
 
 	return ret;
@@ -115,6 +140,7 @@ static ssize_t drill_act_write(struct file *file, const char __user *user_buf,
 	char *act_str = NULL;
 	char *arg1_str = NULL;
 	char *arg2_str = NULL;
+	char *arg3_str = NULL;
 	unsigned long act = 0;
 
 	BUG_ON(*ppos != 0);
@@ -133,13 +159,15 @@ static ssize_t drill_act_write(struct file *file, const char __user *user_buf,
 
 	arg2_str = strsep(&buf_ptr, " ");
 
+	arg3_str = strsep(&buf_ptr, " ");
+
 	ret = kstrtoul(act_str, 10, &act);
 	if (ret) {
 		pr_err("drill: act_write: parsing act failed\n");
 		return ret;
 	}
 
-	ret = drill_act_exec(act, arg1_str, arg2_str);
+	ret = drill_act_exec(act, arg1_str, arg2_str, arg3_str);
 	if (ret == 0)
 		ret = count; /* success, claim we got the whole input */
 
@@ -155,10 +183,16 @@ static int __init drill_init(void)
 	drill.proc_entry = proc_create("drill_act", S_IWUSR | S_IWGRP | S_IWOTH,
 				       NULL, &drill_act_fops);
 	if (!drill.proc_entry) {
-		printk("failed to create /proc/drill_act");
+		pr_err("failed to create /proc/drill_act\n");
 		return -ENOMEM;
 	}
 
+	drill.items = kzalloc(sizeof(struct drill_item_t *) * DRILL_N, GFP_KERNEL);
+	if (!drill.items) {
+		pr_err("failed to allocate drill items\n");
+		proc_remove(drill.proc_entry);
+		return -ENOMEM;
+	}
 	pr_notice("drill: start hacking\n");
 
 	return 0;
@@ -167,6 +201,7 @@ static int __init drill_init(void)
 static void __exit drill_exit(void)
 {
 	pr_notice("drill: stop hacking\n");
+	kfree(drill.items);
 	proc_remove(drill.proc_entry);
 }
 
