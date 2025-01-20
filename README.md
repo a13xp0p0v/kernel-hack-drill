@@ -9,7 +9,6 @@ __Contents:__
   - __drill.h__ - a header file describing the `drill_mod.ko` interface.
   - __drill_test.c__ - a test for `drill_mod.ko`. It should also pass if the kernel is built with `CONFIG_KASAN=y`.
   - __drill_exploit_uaf_callback.c__ - a basic use-after-free exploit overwriting a callback in the `drill_item_t` struct.
-  - __drill_exploit_nullderef.c__ - a basic null-ptr-deref exploit, which uses wonderful [mmap_min_addr bypass][1] by Jann Horn.
 
 N.B. Only basic exploit techniques here.
 
