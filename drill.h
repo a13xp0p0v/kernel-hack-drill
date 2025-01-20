@@ -20,7 +20,7 @@ enum drill_act_t {
 	DRILL_ACT_RESET = 5
 };
 
-#define DRILL_ITEM_SIZE 3300
+#define DRILL_ITEM_SIZE 95
 
 struct drill_item_t {
 	unsigned long foo;
