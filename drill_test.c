@@ -69,7 +69,7 @@ int main(void)
 		goto end;
 
 	printf("test DRILL_ACT_SAVE_VAL\n");
-	ret = act(fd, DRILL_ACT_SAVE_VAL, item_n, "0xa5a5a5a541414141 64");
+	ret = act(fd, DRILL_ACT_SAVE_VAL, item_n, "0xa5a5a5a541414141 16");
 	if (ret == EXIT_FAILURE)
 		goto end;
 
