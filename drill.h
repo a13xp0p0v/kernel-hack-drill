@@ -28,6 +28,6 @@ struct drill_item_t {
 	char data[]; /* C99 flexible array */
 };
 
-#define DRILL_N 1024
+#define DRILL_N 10240
 
 #endif	/* _DRILL_H */

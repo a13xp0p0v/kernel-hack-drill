@@ -9,6 +9,7 @@ __Contents:__
   - __drill.h__ - a header file describing the `drill_mod.ko` interface.
   - __drill_test.c__ - a test for `drill_mod.ko`. It should also pass if the kernel is built with `CONFIG_KASAN=y`.
   - __drill_exploit_uaf_callback.c__ - a basic use-after-free exploit invoking a callback in the freed `drill_item_t` struct.
+  - __drill_exploit_uaf_write.c__ - a basic use-after-free exploit writing data to the freed `drill_item_t` struct.
 
 N.B. Only basic exploit techniques here.
 
