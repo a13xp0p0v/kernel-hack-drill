@@ -55,8 +55,7 @@ static int drill_act_exec(long act,
 		pr_notice("drill: kmalloc'ed item %lu (0x%lx, size %d)\n",
 			  n, (unsigned long)drill.items[n], DRILL_ITEM_SIZE);
 
-		drill.items[n]->foo = 0x4141414141414141lu;
-		drill.items[n]->bar = 0x4242424242424242lu;
+		drill.items[n]->foobar = 0x41414141a5a5a5a5u;
 		drill.items[n]->callback = drill_callback;
 		break;
 

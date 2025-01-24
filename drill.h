@@ -23,8 +23,7 @@ enum drill_act_t {
 #define DRILL_ITEM_SIZE 95
 
 struct drill_item_t {
-	unsigned long foo;
-	unsigned long bar;
+	unsigned long foobar;
 	void (*callback)(void);
 	char data[]; /* C99 flexible array */
 };
