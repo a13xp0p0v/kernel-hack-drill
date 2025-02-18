@@ -13,6 +13,7 @@ __Contents:__
 | __drill_uaf_callback.c__ | a basic use-after-free exploit invoking a callback in the freed `drill_item_t` struct; it performs control flow hijack and gains LPE |
 | __drill_uaf_write_msg_msg.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `msg_msg` kernel object; it performs out-of-bounds reading of the kernel memory |
 | __drill_uaf_write_pipe_buffer.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `pipe_buffer` kernel object; it performs the Dirty Pipe attack and gains LPE |
+| __drill_uaf_write_dirty_pagetable.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a kernel page table; it performs the Dirty Pagetable attack and gains LPE |
 
 N.B. Only basic exploit techniques here.
 
