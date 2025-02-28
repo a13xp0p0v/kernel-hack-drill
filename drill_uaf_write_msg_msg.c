@@ -152,27 +152,27 @@ int prepare_msg_msg(void)
 	msgrcv_buf = malloc(BUF_OOB_SIZE);
 	if (msgrcv_buf == NULL) {
 		perror("[-] malloc");
-		return 1;
+		return EXIT_FAILURE;
 	}
 	memset(msgrcv_buf, 0, BUF_OOB_SIZE);
 
 	for_ftok_fd = open("forftok1", O_CREAT, S_IRUSR | S_IWUSR);
 	if (for_ftok_fd < 0) {
 		perror("[-] open for ftok");
-		return 1;
+		return EXIT_FAILURE;
 	}
 	close(for_ftok_fd);
 
 	key = ftok("forftok1", 1);
 	if (key == -1) {
 		perror("[-] ftok");
-		return 1;
+		return EXIT_FAILURE;
 	}
 
 	msqid = msgget(key, IPC_CREAT | 0666);
 	if (msqid == -1) {
 		perror("[-] msgget");
-		return 1;
+		return EXIT_FAILURE;
 	}
 
 	printf("[+] created msqid %d\n", msqid);
@@ -180,7 +180,7 @@ int prepare_msg_msg(void)
 	memset(msg_oob_r.mtext, 0x42, MSG_NORM_SIZE);
 	msg_oob_r.mtype = MSG_NORM_TYPE;
 
-	return 0;
+	return EXIT_SUCCESS;
 }
 
 int main(void)
@@ -197,7 +197,7 @@ int main(void)
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
 
 	ret = prepare_msg_msg();
-	if (ret)
+	if (ret == EXIT_FAILURE)
 		goto end;
 
 	fd = open("/proc/drill_act", O_WRONLY);
