@@ -10,6 +10,7 @@ __Contents:__
   - __drill_test.c__ - a test for `drill_mod.ko`. It should also pass if the kernel is built with `CONFIG_KASAN=y`.
   - __drill_uaf_callback.c__ - a basic use-after-free exploit invoking a callback in the freed `drill_item_t` struct.
   - __drill_uaf_write_msg_msg.c__ - a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `msg_msg` kernel object.
+  - __drill_uaf_write_pipe_buffer.c__ - a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `pipe_buffer` kernel object.
 
 N.B. Only basic exploit techniques here.
 
