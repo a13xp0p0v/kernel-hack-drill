@@ -1,5 +1,7 @@
-KVER = $(shell uname -r)
-KPATH := /lib/modules/$(KVER)/build
+ifeq ($(KPATH),)
+	KVER := $(shell uname -r)
+	KPATH := /lib/modules/$(KVER)/build
+endif
 
 obj-m := drill_mod.o
 
