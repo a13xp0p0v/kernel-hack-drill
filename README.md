@@ -5,20 +5,23 @@ Only basic methods. Just for fun.
 
 __Contents:__
 
-  - __drill_mod.c__ - a small Linux kernel module with nice vulnerabilities. You can interact with it via a simple procfs interface.
-  - __drill.h__ - a header file describing the `drill_mod.ko` interface.
-  - __drill_test.c__ - a test for `drill_mod.ko`. It should also pass if the kernel is built with `CONFIG_KASAN=y`.
-  - __drill_uaf_callback.c__ - a basic use-after-free exploit invoking a callback in the freed `drill_item_t` struct.
-  - __drill_uaf_write_msg_msg.c__ - a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `msg_msg` kernel object.
-  - __drill_uaf_write_pipe_buffer.c__ - a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `pipe_buffer` kernel object.
+| __File__ | __Description__ |
+| -------- | --------------- |
+| __drill_mod.c__ | a small Linux kernel module with nice vulnerabilities, you can interact with it via a simple procfs interface |
+| __drill.h__ | a header file describing the `drill_mod.ko` interface |
+| __drill_test.c__ | a test for `drill_mod.ko`, it should also pass if the kernel is built with `CONFIG_KASAN=y` |
+| __drill_uaf_callback.c__ | a basic use-after-free exploit invoking a callback in the freed `drill_item_t` struct |
+| __drill_uaf_write_msg_msg.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `msg_msg` kernel object |
+| __drill_uaf_write_pipe_buffer.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `pipe_buffer` kernel object |
 
 N.B. Only basic exploit techniques here.
+
 For some of them, Linux kernel security hardening should be disabled
 (see [Troubleshooting](https://github.com/a13xp0p0v/kernel-hack-drill?tab=readme-ov-file#troubleshooting)).
 
 License: GPL-3.0.
 
-Have fun!
+__Have fun!__
 
 ## Repositories
 
