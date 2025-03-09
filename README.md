@@ -13,10 +13,8 @@ __Contents:__
   - __drill_uaf_write_pipe_buffer.c__ - a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `pipe_buffer` kernel object.
 
 N.B. Only basic exploit techniques here.
-
-So compile your kernel with `x86_64_defconfig` and run it with `pti=off nokaslr` boot arguments.
-
-Also don't forget to run `qemu-system-x86_64` with `-cpu qemu64,-smep,-smap`.
+For some of them, Linux kernel security hardening should be disabled
+(see [Troubleshooting](https://github.com/a13xp0p0v/kernel-hack-drill?tab=readme-ov-file#troubleshooting)).
 
 License: GPL-3.0.
 
@@ -33,9 +31,9 @@ Have fun!
 ## Setup Guide
 
 > [!WARNING]
-> Do not run this module on your host!
+> Do not use vulnerable `drill_mod.ko` on your production systems!
 
-### Running on Ubuntu Server 24.04 virtual machine
+### Variant I: running on Ubuntu Server 24.04 virtual machine
 
 Prepare the toolchain:
 ```
@@ -68,9 +66,11 @@ Ensure that you see these three lines in the output:
 [+] looks like error handling in drill.ko works fine
 ```
 
-### Running on a self-made virtual machine
+Done! Now you can try the PoC-exploits for the vulnerabilities in `drill_mod.ko`.
 
-#### Create a rootfs image with `debootstrap`
+### Variant II: running on a self-made virtual machine
+
+#### 1. Create a rootfs image with `debootstrap`
 
 Create a basic `Debian Bookworm` rootfs image:
 ```
@@ -85,9 +85,7 @@ sudo debootstrap bookworm /mnt/rootfs http://deb.debian.org/debian/
 sudo umount /mnt/rootfs
 ```
 
-#### Prepare the Linux kernel
-
-##### Obtain the toolchain and the kernel source code
+#### 2. Prepare the Linux kernel
 
 Get the needed tools:
 ```
@@ -98,8 +96,6 @@ Get a tarball from https://kernel.org, or get the source code with `git`:
 ```
 git clone https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git ~/linux
 ```
-
-##### Build the Linux kernel
 
 Create the kernel config:
 ```
@@ -116,7 +112,7 @@ Build kernel:
 make -j`nproc`
 ```
 
-#### Prepare the `drill_mod.ko` kernel module
+#### 3. Prepare the `drill_mod.ko` kernel module
 
 Obtain the `kernel-hack-drill` source code:
 ```
@@ -131,7 +127,7 @@ KPATH=~/linux/ make
 
 Here the `KPATH` environment variable contains the path to the Linux kernel source code that we got earlier.
 
-#### Start the virtual machine
+#### 4. Start the virtual machine
 
 Run the VM using `qemu-system-x86_64`:
 ```
@@ -147,12 +143,12 @@ qemu-system-x86_64 \
 -nographic \
 -no-reboot \
 -kernel ~/linux/arch/x86/boot/bzImage \
--append "pti=off nokaslr console=ttyS0 earlyprintk=serial net.ifnames=0 root=/dev/sda" \
+-append "console=ttyS0 earlyprintk=serial net.ifnames=0 root=/dev/sda" \
 -pidfile vm.pid \
 2>&1 | tee vm.log
 ```
 
-#### Install and test `drill_mod.ko`
+#### 5. Install and test `drill_mod.ko`
 
 Transfer built files via `ssh`:
 ```
@@ -182,9 +178,13 @@ Ensure you see these three lines in the output:
 [+] looks like error handling in drill.ko works fine
 ```
 
-### Handling the version mismatch issues
+Done! Now you can try the PoC-exploits for the vulnerabilities in `drill_mod.ko`.
 
-One day, you might encounter this error:
+### Troubleshooting
+
+#### Handling the version mismatch issues
+
+One day, you might encounter an error like this:
 ```
 user@hostname ~> sudo insmod drill.ko
 insmod: ERROR: could not insert module drill.ko: Invalid module format
@@ -195,9 +195,9 @@ In that case, make sure that:
 1. After fetching a new kernel with `git` you have rebuilt your module.
 2. Your kernel path has not changed and the `KPATH` environment variable contains the correct path.
 
-## Usage
+#### Disabling the Linux kernel security hardening features
 
-After setup is complete, you can try these PoC-exploits for the vulnerabilities in `drill_mod.ko`:
-- __drill_uaf_callback__
-- __drill_uaf_write_msg_msg__
-- __drill_uaf_write_pipe_buffer__
+Basic `ret2usr` attack requires:
+
+ - Adding `pti=off nokaslr` boot arguments for the Linux kernel,
+ - Running `qemu-system-x86_64` with `-cpu qemu64,-smep,-smap` arguments.
