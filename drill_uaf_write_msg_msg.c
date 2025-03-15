@@ -9,8 +9,7 @@
  *   - CONFIG_SLAB_BUCKETS
  *   - CONFIG_RANDOM_KMALLOC_CACHES
  *
- * Currently, this PoC performs OOB reading of the kernel memory.
- * LPE is TODO.
+ * This PoC performs out-of-bounds reading of the kernel memory.
  */
 
 #define _GNU_SOURCE

@@ -10,9 +10,9 @@ __Contents:__
 | __drill_mod.c__ | a small Linux kernel module with nice vulnerabilities, you can interact with it via a simple procfs interface |
 | __drill.h__ | a header file describing the `drill_mod.ko` interface |
 | __drill_test.c__ | a test for `drill_mod.ko`, it should also pass if the kernel is built with `CONFIG_KASAN=y` |
-| __drill_uaf_callback.c__ | a basic use-after-free exploit invoking a callback in the freed `drill_item_t` struct |
-| __drill_uaf_write_msg_msg.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `msg_msg` kernel object |
-| __drill_uaf_write_pipe_buffer.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `pipe_buffer` kernel object |
+| __drill_uaf_callback.c__ | a basic use-after-free exploit invoking a callback in the freed `drill_item_t` struct; it performs control flow hijack and gains LPE |
+| __drill_uaf_write_msg_msg.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `msg_msg` kernel object; it performs out-of-bounds reading of the kernel memory |
+| __drill_uaf_write_pipe_buffer.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `pipe_buffer` kernel object; it performs the Dirty Pipe attack and gains LPE |
 
 N.B. Only basic exploit techniques here.
 

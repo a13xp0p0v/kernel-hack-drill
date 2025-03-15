@@ -9,7 +9,7 @@
  *   - CONFIG_SLAB_BUCKETS
  *   - CONFIG_RANDOM_KMALLOC_CACHES
  *
- * Currently, this PoC performs the Dirty Pipe attack for LPE.
+ * This PoC performs the Dirty Pipe attack and gains LPE.
  */
 
 #define _GNU_SOURCE
