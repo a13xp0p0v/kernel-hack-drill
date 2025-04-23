@@ -80,6 +80,7 @@ int act(int act_fd, int code, int n, char *args)
  *      /sys/kernel/slab/kmalloc-rnd-04-96/objs_per_slab
  *        42
  *  - pin the process to a single CPU
+ *  - prepare the pipe infrastructure
  *  - create new active slab, allocate objs_per_slab objects
  *  - allocate (objs_per_slab * cpu_partial) objects to later overflow the partial list
  *  - create new active slab, allocate objs_per_slab objects
