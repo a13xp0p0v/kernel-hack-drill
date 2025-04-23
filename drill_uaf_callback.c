@@ -226,7 +226,6 @@ end:
 		ret = close(act_fd);
 		if (ret != 0)
 			perror("[-] close act_fd");
-		printf("  closed the drill_act act_fd\n");
 	}
 
 	return ret;

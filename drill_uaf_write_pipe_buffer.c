@@ -402,14 +402,12 @@ end:
 		ret = close(passwd_fd);
 		if (ret != 0)
 			perror("[-] close passwd_fd");
-		printf("  closed the passwd_fd\n");
 	}
 
 	if (act_fd >= 0) {
 		ret = close(act_fd);
 		if (ret != 0)
 			perror("[-] close act_fd");
-		printf("  closed the drill_act act_fd\n");
 	}
 
 	return ret;
