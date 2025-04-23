@@ -20,22 +20,13 @@
 #define _GNU_SOURCE
 
 #include <stdio.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <fcntl.h>
-#include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <sys/syscall.h>
-#include <stdbool.h>
-#include <sys/wait.h>
-#include <sys/mman.h>
-#include <stdint.h>
-#include <sys/xattr.h>
+#include <stdlib.h>
 #include <assert.h>
 #include <sched.h>
-#include <sys/ipc.h>
-#include <sys/msg.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <linux/if_alg.h>
 #include "drill.h"
