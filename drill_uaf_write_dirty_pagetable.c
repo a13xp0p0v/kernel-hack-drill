@@ -30,9 +30,6 @@
 #include <linux/if_alg.h>
 #include "drill.h"
 
-#define STR_EXPAND(arg) #arg
-#define STR(arg) STR_EXPAND(arg)
-
 int do_cpu_pinning(void)
 {
 	int ret = 0;
