@@ -344,6 +344,7 @@ int main(void)
 			goto end;
 		}
 	}
+	printf("[+] pipe_buffer spraying is done\n");
 
 	printf("[!] perform uaf write using the dangling reference\n");
 	/*

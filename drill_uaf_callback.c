@@ -125,7 +125,6 @@ int act(int act_fd, int code, int n, char *args)
 
 	len = strlen(buf) + 1; /* with null byte */
 	assert(len <= DRILL_ACT_SIZE);
-	printf("    going to write \"%s\" (%zu bytes) to drill_act\n", buf, len);
 
 	bytes = write(act_fd, buf, len);
 	if (bytes <= 0) {
