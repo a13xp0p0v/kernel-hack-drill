@@ -106,12 +106,12 @@ int act(int act_fd, int code, int n, char *args)
 #define _pmd_index_to_virt(i) (i << 21)
 #define _pud_index_to_virt(i) (i << 30)
 #define _pgd_index_to_virt(i) (i << 39)
-#define PTI_TO_VIRT(pud_index, pmd_index, pte_index, page_index, byte_index) \
-	((void *)(_pgd_index_to_virt((unsigned long long)(pud_index)) +      \
-		  _pud_index_to_virt((unsigned long long)(pmd_index)) +      \
-		  _pmd_index_to_virt((unsigned long long)(pte_index)) +      \
-		  _pte_index_to_virt((unsigned long long)(page_index)) +     \
-		  (unsigned long long)(byte_index)))
+#define PTI_TO_VIRT(pgd_index, pud_index, pmd_index, pte_index, page_index) \
+	((void *)(_pgd_index_to_virt((unsigned long long)(pgd_index)) +      \
+		  _pud_index_to_virt((unsigned long long)(pud_index)) +      \
+		  _pmd_index_to_virt((unsigned long long)(pmd_index)) +      \
+		  _pte_index_to_virt((unsigned long long)(pte_index)) +     \
+		  (unsigned long long)(page_index)))
 
 int prepare_page_tables()
 {
