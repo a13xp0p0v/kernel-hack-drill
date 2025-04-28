@@ -11,6 +11,7 @@ __Contents:__
 | __drill.h__ | a header file describing the `drill_mod.ko` interface |
 | __drill_test.c__ | a test for `drill_mod.ko`, it should also pass if the kernel is built with `CONFIG_KASAN=y` |
 | __drill_uaf_callback.c__ | a basic use-after-free exploit invoking a callback in the freed `drill_item_t` struct; it performs control flow hijack and gains LPE |
+| __drill_uaf_callback_rop_smep.c__ | a basic use-after-free exploit invoking a callback in the freed `drill_item_t` struct; it performs control flow hijack and gains LPE bypassing SMEP using ROP/JOP |
 | __drill_uaf_w_msg_msg.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `msg_msg` kernel object; it performs out-of-bounds reading of the kernel memory |
 | __drill_uaf_w_pipe_buffer.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `pipe_buffer` kernel object; it performs the Dirty Pipe attack and gains LPE |
 | __drill_uaf_w_pte.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a Page Table Entry (PTE); it performs the Dirty Pagetable attack and gains LPE |
