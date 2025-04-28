@@ -214,6 +214,9 @@ end:
 		ret = close(spray_fd);
 		if (ret != 0)
 			perror("[-] close spray_fd");
+		if (remove("./foobar") != 0) {
+			perror("[-] remove ./foobar");
+		}
 	}
 
 	if (act_fd >= 0) {
