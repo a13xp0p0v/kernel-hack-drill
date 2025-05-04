@@ -315,5 +315,9 @@ end:
 			perror("[-] close act_fd");
 	}
 
+        if (remove("./forftok1") != 0) {
+                perror("[-] remove ./forftok1");
+        }
+
 	return ret;
 }
