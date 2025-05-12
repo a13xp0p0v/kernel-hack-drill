@@ -149,6 +149,7 @@ int prepare_msg_msg(void)
 
 int main(void)
 {
+	int result = EXIT_FAILURE;
 	int ret = EXIT_FAILURE;
 	int act_fd = -1;
 	long i = 0;
@@ -302,6 +303,8 @@ int main(void)
 			printf("  %ld: 0x%lx\n", i * sizeof(unsigned long), msgrcv_buf[i]);
 	}
 
+	result = EXIT_SUCCESS;
+
 end:
 	for (i = 0; ; i++) {
 		bytes = msgrcv(msqid, msgrcv_buf, MSG_OOB_SIZE, MSG_NORM_TYPE, IPC_NOWAIT);
@@ -315,5 +318,5 @@ end:
 			perror("[-] close act_fd");
 	}
 
-	return ret;
+	return result;
 }

