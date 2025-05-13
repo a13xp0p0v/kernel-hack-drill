@@ -182,6 +182,7 @@ int main(void)
 	}
 
 	printf("[+] looks like error handling in drill.ko works fine\n");
+	ret = EXIT_SUCCESS;
 
 end:
 	if (ret == EXIT_FAILURE)
@@ -190,8 +191,7 @@ end:
 		printf("\n[+] the end! By the way, did you run it with CONFIG_KASAN=y?\n");
 
 	if (fd >= 0) {
-		ret = close(fd);
-		if (ret != 0)
+		if (close(fd) < 0)
 			perror("[-] close fd");
 	}
 

