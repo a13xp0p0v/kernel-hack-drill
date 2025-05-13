@@ -291,19 +291,19 @@ int prepare_privesc_script(char *path, size_t path_size)
 
 	script_fd = memfd_create("", MFD_CLOEXEC);
 	if (script_fd < 0) {
-		perror("[-] memfd_create\n");
+		perror("[-] memfd_create");
 		return EXIT_FAILURE;
 	}
 
 	shell_stdin_fd = dup(STDIN_FILENO);
 	if (shell_stdin_fd < 0) {
-		perror("[-] dup\n");
+		perror("[-] dup");
 		return EXIT_FAILURE;
 	}
 
 	shell_stdout_fd = dup(STDOUT_FILENO);
 	if (shell_stdout_fd < 0) {
-		perror("[-] dup\n");
+		perror("[-] dup");
 		return EXIT_FAILURE;
 	}
 
