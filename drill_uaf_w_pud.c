@@ -29,6 +29,7 @@
 #include <sys/mman.h>
 #include <sys/sysinfo.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <linux/if_alg.h>
 #include <linux/limits.h>
 #include "drill.h"
@@ -156,26 +157,42 @@ int prepare_page_tables(void)
 /* See https://pwning.tech/nftables/#47-tlb-flushing */
 int flush_tlb(void *addr, size_t len)
 {
-	short *status = NULL;
+	pid_t cpid = -1;
+	pid_t w = -1;
+	int wstatus = 0;
 
-	status = mmap(NULL, sizeof(short), PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-	if (status == MAP_FAILED) {
-		perror("[-] mmap");
+	cpid = fork();
+	if (cpid < 0) {
+		perror("[-] fork");
 		return EXIT_FAILURE;
 	}
 
-	*status = TLB_FLUSH_IN_PROGRESS;
+	if (cpid == 0) {
+		int ret = munmap(addr, len);
 
-	if (fork() == 0) {
-		munmap(addr, len);
-		*status = TLB_FLUSH_DONE;
+		if (ret < 0) {
+			perror("[-] munmap");
+			exit(EXIT_FAILURE);
+		}
+
 		exit(EXIT_SUCCESS);
 	}
 
-	while (*status != TLB_FLUSH_DONE)
-		usleep(10000);
+	w = waitpid(cpid, &wstatus, 0);
+	if (w < 0) {
+		perror("[-] waitpid");
+		return EXIT_FAILURE;
+	}
 
-	munmap(status, sizeof(short));
+	if (!WIFEXITED(wstatus)) {
+		printf("[-] child didn't exit normally\n");
+		return EXIT_FAILURE;
+	}
+
+	if (WEXITSTATUS(wstatus) != EXIT_SUCCESS) {
+		printf("[-] child failed\n");
+		return EXIT_FAILURE;
+	}
 
 	printf("[+] TLB is flushed\n");
 
