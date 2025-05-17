@@ -504,7 +504,7 @@ int main(void)
 	if (ret == EXIT_FAILURE)
 		goto end;
 
-	for (int i = 0; i < PT_ENTRIES; i++) {
+	for (i = 0; i < PT_ENTRIES; i++) {
 		unsigned long *addr = PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0);
 		unsigned long val = *addr;
 		char *modprobe_path_uaddr = NULL;
