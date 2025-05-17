@@ -143,7 +143,7 @@ int prepare_page_tables(void)
 			return EXIT_FAILURE;
 		}
 	}
-	printf("[+] mmap 1: from %p to %p\n",
+	printf("[+] mmap one KiB in each GiB: from %p to %p\n",
 			PT_INDICES_TO_VIRT(PGD_N, 0, 0, 0, 0),
 			PT_INDICES_TO_VIRT(PGD_N, i, 0, 0, 0));
 
