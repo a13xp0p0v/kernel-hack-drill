@@ -290,13 +290,13 @@ void *memmem_modprobe_path(void *memory, size_t memory_size)
 	if (ret == EXIT_FAILURE)
 		return NULL;
 
+	/* Return the initial value back for now */
+	modprobe_path_uaddr[0] = '/';
+
 	if (modprobe_path[0] != 'x') {
 		printf("[-] testing modprobe_path overwriting failed\n");
 		return NULL;
 	}
-
-	/* Return the initial value back for now */
-	modprobe_path_uaddr[0] = '/';
 
 	printf("[+] testing modprobe_path overwriting succeeded\n");
 	return modprobe_path_uaddr;
