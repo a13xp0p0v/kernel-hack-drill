@@ -306,9 +306,14 @@ int is_kernel_text(void *addr)
 	char *patterns[] = KERNEL_TEXT_PATTERNS;
 	size_t n = sizeof(patterns) / sizeof(char *);
 	size_t i = 0;
+	size_t j;
 
 	for (i = 0; i < n; i++) {
-		if (memcmp(addr, patterns[i], KERNEL_TEXT_PATTERN_LEN) == 0)
+		for (j = 0; j < KERNEL_TEXT_PATTERN_LEN; j++) {
+			if (((char *)addr)[j] != patterns[i][j])
+				break;
+		}
+		if (j == KERNEL_TEXT_PATTERN_LEN)
 			return 1;
 	}
 	return 0;
