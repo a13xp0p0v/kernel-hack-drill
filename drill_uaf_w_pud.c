@@ -164,7 +164,7 @@ int prepare_page_tables(void)
 			return EXIT_FAILURE;
 		}
 	}
-	printf("[+] mmap one KiB in each PUD entry: from %p to %p\n",
+	printf("[+] mmap 4 KiB for each PUD entry: from %p to %p\n",
 			PT_INDICES_TO_VIRT(PGD_N, 0, 0, 0, 0),
 			PT_INDICES_TO_VIRT(PGD_N, i, 0, 0, 0));
 
