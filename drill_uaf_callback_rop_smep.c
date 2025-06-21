@@ -78,11 +78,11 @@ int prepare_rop_chain(void)
 
 	if (mmaped_area == MAP_FAILED) {
 		perror("[-] mmap");
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 	}
 	if (mmaped_area != (void *)FAKE_STACK_MMAP_ADDR) {
 		printf("[-] mmaped to wrong addr: %p\n", mmaped_area);
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 	}
 	printf("[+] mmaped_area is at %p\n", mmaped_area);
 	memset(mmaped_area, 0, MMAP_SZ);
