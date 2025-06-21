@@ -29,15 +29,15 @@
 #include <sys/xattr.h>
 #include "drill.h"
 
-#define MMAP_SZ			0x1000
-#define PAYLOAD_SZ		95
+#define MMAP_SZ				0x1000
+#define PAYLOAD_SZ			95
 
 /* ============================== Kernel stuff ============================== */
 
 /* Addresses from System.map (no KASLR) */
-#define COMMIT_CREDS_PTR 0xffffffff81123b20lu
-#define PREPARE_KERNEL_CRED_PTR 0xffffffff81124080lu
-#define INIT_TASK_PTR 0xffffffff83411080lu
+#define COMMIT_CREDS_PTR		0xffffffff81123b20UL
+#define PREPARE_KERNEL_CRED_PTR		0xffffffff81124080UL
+#define INIT_TASK_PTR			0xffffffff83411080UL
 
 typedef int __attribute__((regparm(3))) (*_commit_creds)(unsigned long cred);
 typedef unsigned long __attribute__((regparm(3))) (*_prepare_kernel_cred)(unsigned long cred);
