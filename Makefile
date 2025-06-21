@@ -17,4 +17,10 @@ all:
 
 clean:
 	make -C $(KPATH) M=$(PWD) clean
-	rm drill_uaf_callback_rop_smep drill_test drill_uaf_callback drill_uaf_w_msg_msg drill_uaf_w_pipe_buffer drill_uaf_w_pte drill_uaf_w_pud
+	rm drill_test
+	rm drill_uaf_callback
+	rm drill_uaf_callback_rop_smep
+	rm drill_uaf_w_msg_msg
+	rm drill_uaf_w_pipe_buffer
+	rm drill_uaf_w_pte
+	rm drill_uaf_w_pud
