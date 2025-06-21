@@ -8,6 +8,7 @@ obj-m := drill_mod.o
 all:
 	gcc drill_test.c -Wall -static -o drill_test
 	gcc drill_uaf_callback.c -Wall -static -o drill_uaf_callback
+	gcc drill_uaf_callback_rop_smep.c  -Wall -static -o drill_uaf_callback_rop_smep
 	gcc drill_uaf_w_msg_msg.c -Wall -static -o drill_uaf_w_msg_msg
 	gcc drill_uaf_w_pipe_buffer.c -Wall -static -o drill_uaf_w_pipe_buffer
 	gcc drill_uaf_w_pte.c -Wall -static -o drill_uaf_w_pte
@@ -16,4 +17,10 @@ all:
 
 clean:
 	make -C $(KPATH) M=$(PWD) clean
-	rm drill_test drill_uaf_callback drill_uaf_w_msg_msg drill_uaf_w_pipe_buffer drill_uaf_w_pte drill_uaf_w_pud
+	rm drill_test
+	rm drill_uaf_callback
+	rm drill_uaf_callback_rop_smep
+	rm drill_uaf_w_msg_msg
+	rm drill_uaf_w_pipe_buffer
+	rm drill_uaf_w_pte
+	rm drill_uaf_w_pud
