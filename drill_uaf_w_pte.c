@@ -226,7 +226,7 @@ int flush_tlb(void *addr, size_t len)
 }
 
 /* Update the address of modprobe_path for your kernel: */
-#define MODPROBE_PATH_ADDR 0xffffffff835ccc60lu
+#define MODPROBE_PATH_ADDR 0xffffffff835a9f20lu
 #define KERNEL_TEXT_ADDR 0xffffffff81000000lu
 #define MODPROBE_PATH_ADDR_OFFSET (MODPROBE_PATH_ADDR - KERNEL_TEXT_ADDR)
 /* See "Kernel code" in /proc/iomem to update KERNEL_TEXT_PHYS_ADDR for your kernel */
