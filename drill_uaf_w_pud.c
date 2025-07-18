@@ -8,12 +8,12 @@
  * (they don't break the implemented cross-cache attack):
  *   - CONFIG_SLAB_BUCKETS
  *   - CONFIG_RANDOM_KMALLOC_CACHES
- * 
+ *
  * This PoC performs the Dirty Pagetable attack via huge pages and gains LPE.
- * 
+ *
  * You may also compile the kernel with CONFIG_PAGE_TABLE_CHECK and CONFIG_TRANSPARENT_HUGEPAGE,
  * since this PoC can bypass them combined.
- * 
+ *
  * Requirements:
  *  1) Enable CONFIG_CRYPTO_USER_API to exploit the modprobe_path LPE technique
  *  2) Ensure that KERNEL_TEXT_PATTERNS contains the first bytes of _text of your kernel
@@ -640,7 +640,6 @@ int main(void)
 		/* Launch the root shell */
 		trigger_modprobe_sock();
 		result = EXIT_SUCCESS;
-
 		goto repair; /* root shell is finished */
 	}
 
