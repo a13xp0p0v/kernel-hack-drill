@@ -309,11 +309,12 @@ int is_kernel_text(void *addr)
 	char *patterns[] = KERNEL_TEXT_PATTERNS;
 	size_t n = sizeof(patterns) / sizeof(char *);
 	size_t i = 0;
-	size_t j;
+	size_t j = 0;
+	char *bytes = addr;
 
 	for (i = 0; i < n; i++) {
 		for (j = 0; j < KERNEL_TEXT_PATTERN_LEN; j++) {
-			if (((char *)addr)[j] != patterns[i][j])
+			if (bytes[j] != patterns[i][j])
 				break;
 		}
 		if (j == KERNEL_TEXT_PATTERN_LEN)
