@@ -223,5 +223,8 @@ end:
 			perror("[-] close act_fd");
 	}
 
+	if (remove("./foobar") != 0) 
+		perror("[-] remove ./foobar");
+
 	return result;
 }
