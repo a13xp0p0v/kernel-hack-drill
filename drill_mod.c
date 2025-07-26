@@ -27,6 +27,9 @@ static int drill_act_exec(long act,
 {
 	int ret = 0;
 	unsigned long n = 0;
+	unsigned long val = 0;
+	unsigned long offset = 0;
+	unsigned long *data_addr = NULL;
 
 	if (!arg1_str) {
 		pr_err("drill: item number is missing\n");
@@ -67,10 +70,6 @@ static int drill_act_exec(long act,
 		break;
 
 	case DRILL_ACT_SAVE_VAL:
-		unsigned long val = 0;
-		unsigned long offset = 0;
-		unsigned long *data_addr = NULL;
-
 		if (!arg2_str) {
 			pr_err("drill: save_val: missing value\n");
 			return -EINVAL;
