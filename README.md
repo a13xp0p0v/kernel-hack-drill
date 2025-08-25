@@ -7,15 +7,15 @@ __Contents:__
 
 | __File__ | __Description__ |
 | -------- | --------------- |
-| __drill_mod.c__ | a small Linux kernel module with nice vulnerabilities, you can interact with it via a simple procfs interface |
+| __drill_mod.c__ | a small Linux kernel module that provides the `/proc/drill_act` file as a simple interface to userspace; this module contains vulnerabilities that you can control and experiment with |
 | __drill.h__ | a header file describing the `drill_mod.ko` interface |
-| __drill_test.c__ | a test for `drill_mod.ko`, it should also pass if the kernel is built with `CONFIG_KASAN=y` |
-| __drill_uaf_callback.c__ | a basic use-after-free exploit invoking a callback in the freed `drill_item_t` struct; it performs control flow hijack and gains LPE |
-| __drill_uaf_callback_rop_smep.c__ | a basic use-after-free exploit invoking a callback in the freed `drill_item_t` struct; it performs control flow hijack and gains LPE bypassing SMEP using ROP/JOP |
-| __drill_uaf_w_msg_msg.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `msg_msg` kernel object; it performs out-of-bounds reading of the kernel memory |
-| __drill_uaf_w_pipe_buffer.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a `pipe_buffer` kernel object; it performs the Dirty Pipe attack and gains LPE |
-| __drill_uaf_w_pte.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a Page Table Entry (PTE); it performs the Dirty Pagetable attack and gains LPE |
-| __drill_uaf_w_pud.c__ | a basic use-after-free exploit writing data to the freed `drill_item_t` struct and overwriting a Page Upper Directory (PUD); it performs the Dirty Pagetable attack via huge pages and gains LPE |
+| __drill_test.c__ | a userspace test for `drill_mod.ko` that provides the examples of using `/proc/drill_act`; this test doesn't provoke memory corruptions in `drill_mod.ko` and it passes if `CONFIG_KASAN=y` |
+| __drill_uaf_callback.c__ | a basic UAF exploit that invokes a callback inside a freed `drill_item_t` structure; it hijacks control flow and gains LPE |
+| __drill_uaf_callback_rop_smep.c__ | an improved version of `drill_uaf_callback.c` that adds a ROP chain to bypass SMEP on `x86_64` |
+| __drill_uaf_w_msg_msg.c__ | a basic UAF exploit that writes into a freed `drill_item_t`; it uses a cross-cache attack and overwrites `msg_msg.m_ts` enabling out-of-bounds reading of the kernel memory |
+| __drill_uaf_w_pipe_buffer.c__ | a basic a UAF exploit that writes into a freed `drill_item_t`; it performs a cross-cache attack and overwrites `pipe_buffer.flags` to implement the Dirty Pipe technique and gain LPE |
+| __drill_uaf_w_pte.c__ | a basic UAF exploit that writes to a freed `drill_item_t`; it performs a cross-allocator attack and overwrites a page table entry (PTE) to implement the Dirty Pagetable technique and gain LPE on `x86_64` |
+| __drill_uaf_w_pud.c__ | an improved version of `__drill_uaf_w_pte.c__` that overwrites a page upper directory (PUD) instead of a PTE and implements the Dirty Pagetable attack via huge pages |
 
 N.B. Only basic exploit techniques here.
 
