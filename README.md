@@ -12,6 +12,7 @@ __Contents:__
 | __drill_test.c__ | a userspace test for `drill_mod.ko` that provides the examples of using `/proc/drill_act`; this test doesn't provoke memory corruptions in `drill_mod.ko` and it passes if `CONFIG_KASAN=y` |
 | __drill_uaf_callback.c__ | a basic UAF exploit that invokes a callback inside a freed `drill_item_t` structure; it hijacks control flow and gains LPE |
 | __drill_uaf_callback_rop_smep.c__ | an improved version of `drill_uaf_callback.c` that adds a ROP chain to bypass SMEP on `x86_64` |
+| __drill_uaf_callback_rop_smep.c__ | an improved version of `__drill_uaf_callback_rop_smep.c` that implements two-step pivot in the kernelspace to bypass SMAP on `x86_64` |
 | __drill_uaf_w_msg_msg.c__ | a basic UAF exploit that writes into a freed `drill_item_t`; it uses a cross-cache attack and overwrites `msg_msg.m_ts` enabling out-of-bounds reading of the kernel memory |
 | __drill_uaf_w_pipe_buffer.c__ | a basic a UAF exploit that writes into a freed `drill_item_t`; it performs a cross-cache attack and overwrites `pipe_buffer.flags` to implement the Dirty Pipe technique and gain LPE |
 | __drill_uaf_w_pte.c__ | a basic UAF exploit that writes to a freed `drill_item_t`; it performs a cross-allocator attack and overwrites a page table entry (PTE) to implement the Dirty Pagetable technique and gain LPE on `x86_64` |
