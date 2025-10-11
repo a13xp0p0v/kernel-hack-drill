@@ -13,6 +13,7 @@ all:
 	gcc drill_uaf_w_pipe_buffer.c -Wall -static -o drill_uaf_w_pipe_buffer
 	gcc drill_uaf_w_pte.c -Wall -static -o drill_uaf_w_pte
 	gcc drill_uaf_w_pud.c -Wall -static -o drill_uaf_w_pud
+	gcc drill_uaf_oobw.c -Wall -static -o drill_uaf_oobw
 	make -C $(KPATH) M=$(PWD) modules
 
 clean:
@@ -24,3 +25,4 @@ clean:
 	rm drill_uaf_w_pipe_buffer
 	rm drill_uaf_w_pte
 	rm drill_uaf_w_pud
+	rm drill_uaf_oobw

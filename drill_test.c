@@ -173,14 +173,6 @@ int main(void)
 		goto end;
 	}
 
-	err_act = "3 50 0x55 0xffffffffffff";
-	printf("using DRILL_ACT_SAVE_VAL with huge offset: %s\n", err_act);
-	bytes = write(fd, err_act, strlen(err_act) + 1);
-	if (bytes >= 0) {
-		ret = EXIT_FAILURE;
-		goto end;
-	}
-
 	printf("[+] looks like error handling in drill.ko works fine\n");
 	ret = EXIT_SUCCESS;
 
