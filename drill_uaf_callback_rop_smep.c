@@ -4,29 +4,26 @@
  *
  * Only basic methods. Just for fun.
  *
- * 1) Compile the Linux kernel without:
- *   - CONFIG_SLAB_BUCKETS
- *   - CONFIG_RANDOM_KMALLOC_CACHES
+ * 1) Use Linux kernel version v6.12.7 tag (319addc2ad901dac4d6cc931d77ef35073e0942f)
  *
- * 2) Disable mitigations:
- *   - run qemu with "-cpu qemu64,+smep,-smap".
- *   - run the kernel with "pti=off nokaslr".
+ * 2) Use gcc version 11.4.0
  *
- * 3) Check your kernel version:
- *   - head at v6.12.7 tag,
- *   319addc2ad901dac4d6cc931d77ef35073e0942f
- *
- * 4) Difference from `defconfig`:
+ * 3) Change these options in `defconfig`:
  *   - CONFIG_CONFIGFS_FS=y
  *   - CONFIG_SECURITYFS=y
  *   - CONFIG_DEBUG_INFO=y
- *   - CONFIG_DEBUG_INFO_DWARF4=y
- *   - CONFIG_DEBUG_INFO_COMPRESSED_NONE=y
  *   - CONFIG_GDB_SCRIPTS=y
  *
- *  5) Compiler is gcc, version 11.4.0
+ * 4) Ensure that these options are disabled:
+ *   - CONFIG_SLAB_BUCKETS
+ *   - CONFIG_RANDOM_KMALLOC_CACHES
  *
- * This PoC performs control flow hijack and gains LPE bypassing SMEP using ROP/JOP.
+ * 5) Compile the kernel and run the VM with the needed settings:
+ *   - Run qemu with "-cpu qemu64,+smep,-smap"
+ *   - Run the kernel with "pti=off nokaslr"
+ *
+ * This PoC performs control flow hijack and gains LPE bypassing
+ * SMEP via a ROP/JOP chain placed in the userspace.
  */
 
 #define _GNU_SOURCE
