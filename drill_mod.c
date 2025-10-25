@@ -92,12 +92,6 @@ static int drill_act_exec(long act,
 			return -EINVAL;
 		}
 
-		if (offset > DRILL_ITEM_SIZE -
-				sizeof(struct drill_item_t) - sizeof(val)) {
-			pr_err("drill: save_val: oob offset %ld\n", offset);
-			return -EINVAL;
-		}
-
 		data_addr = (unsigned long *)(drill.items[n]->data + offset);
 		pr_notice("drill: save val 0x%lx to item %lu (0x%lx) at data offset %ld (0x%lx)\n",
 					val, n, (unsigned long)drill.items[n],
