@@ -11,8 +11,8 @@ all:
 	gcc drill_uaf_callback_rop_smep.c  -Wall -static -o drill_uaf_callback_rop_smep
 	gcc drill_uaf_w_msg_msg.c -Wall -static -o drill_uaf_w_msg_msg
 	gcc drill_uaf_w_pipe_buffer.c -Wall -static -o drill_uaf_w_pipe_buffer
-	gcc drill_uaf_w_pte.c -Wall -static -o drill_uaf_w_pte
-	gcc drill_uaf_w_pud.c -Wall -static -o drill_uaf_w_pud
+	gcc drill_uaf_w_pte.c -Wall -static -o drill_uaf_w_pte -lrt -lpthread
+	gcc drill_uaf_w_pud.c -Wall -static -o drill_uaf_w_pud -lrt -lpthread
 	make -C $(KPATH) M=$(PWD) modules
 
 clean:
