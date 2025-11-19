@@ -40,9 +40,7 @@
 #include <sys/wait.h>
 #include <sys/xattr.h>
 #include <sys/user.h>
-#include <err.h>
 #include <sys/sendfile.h>
-#include <sys/syscall.h>
 #include "drill.h"
 
 #define MMAP_SZ				(PAGE_SIZE * 2)
