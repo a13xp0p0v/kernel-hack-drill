@@ -64,13 +64,13 @@ static const char fake_core_pattern[] = "|/proc/%P/fd/666 %P";
 
 /* ========================================================================== */
 
-int do_cpu_pinning(int c)
+int do_cpu_pinning(int cpu_n)
 {
 	int ret = 0;
 	cpu_set_t single_cpu;
 
 	CPU_ZERO(&single_cpu);
-	CPU_SET(c, &single_cpu);
+	CPU_SET(cpu_n, &single_cpu);
 
 	ret = sched_setaffinity(0, sizeof(single_cpu), &single_cpu);
 	if (ret != 0) {
@@ -78,7 +78,7 @@ int do_cpu_pinning(int c)
 		return EXIT_FAILURE;
 	}
 
-	printf("[+] pinned to CPU #0\n");
+	printf("[+] pinned to CPU #%d\n", cpu_n);
 	return EXIT_SUCCESS;
 }
 
