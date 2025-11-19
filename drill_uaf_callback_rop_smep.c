@@ -20,10 +20,11 @@
  *
  * 5) Compile the kernel and run the VM with the needed settings:
  *   - Run qemu with "-cpu qemu64,+smep,-smap"
- *   - Run the kernel with "pti=off nokaslr"
+ *   - Run the kernel with "pti=on nokaslr"
  *
  * This PoC performs control flow hijack and gains LPE bypassing
- * SMEP via a ROP/JOP chain placed in the userspace.
+ * SMEP and MITIGATION_PAGE_TABLE_ISOLATION via a ROP/JOP chain
+ * placed in the userspace.
  */
 
 #define _GNU_SOURCE
