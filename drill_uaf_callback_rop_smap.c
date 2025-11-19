@@ -20,6 +20,7 @@
  *
  * 5) Compile the kernel and run the VM with the needed settings:
  *   - Run qemu with "-cpu qemu64,+smep,+smap"
+ *   - Give the VM at least 2 CPUs: "-smp 2"
  *   - Run the kernel with "pti=on nokaslr"
  *
  * This PoC performs control flow hijack and gains LPE bypassing
