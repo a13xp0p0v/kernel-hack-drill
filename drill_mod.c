@@ -15,15 +15,12 @@ struct drill_t {
 
 static struct drill_t drill; /* initialized by zeros */
 
-static void drill_callback(void) {
-	pr_notice("normal drill_callback 0x%lx!\n",
-				(unsigned long)drill_callback);
+static void drill_callback(void)
+{
+	pr_notice("normal drill_callback 0x%lx!\n", (unsigned long)drill_callback);
 }
 
-static int drill_act_exec(long act,
-			  char *arg1_str,
-			  char *arg2_str,
-			  char *arg3_str)
+static int drill_act_exec(long act, char *arg1_str, char *arg2_str, char *arg3_str)
 {
 	int ret = 0;
 	unsigned long n = 0;
@@ -55,8 +52,8 @@ static int drill_act_exec(long act,
 			return -ENOMEM;
 		}
 
-		pr_notice("drill: kmalloc'ed item %lu (0x%lx, size %d)\n",
-			  n, (unsigned long)drill.items[n], DRILL_ITEM_SIZE);
+		pr_notice("drill: kmalloc'ed item %lu (0x%lx, size %d)\n", n,
+			  (unsigned long)drill.items[n], DRILL_ITEM_SIZE);
 
 		drill.items[n]->foobar = 0x41414141a5a5a5a5u;
 		drill.items[n]->callback = drill_callback;
@@ -64,8 +61,8 @@ static int drill_act_exec(long act,
 
 	case DRILL_ACT_CALLBACK:
 		pr_notice("drill: exec callback 0x%lx for item %lu (0x%lx)\n",
-					(unsigned long)drill.items[n]->callback,
-					n, (unsigned long)drill.items[n]);
+			  (unsigned long)drill.items[n]->callback, n,
+			  (unsigned long)drill.items[n]);
 		drill.items[n]->callback(); /* No check, BAD BAD BAD */
 		break;
 
@@ -92,27 +89,24 @@ static int drill_act_exec(long act,
 			return -EINVAL;
 		}
 
-		if (offset > DRILL_ITEM_SIZE -
-				sizeof(struct drill_item_t) - sizeof(val)) {
+		if (offset > DRILL_ITEM_SIZE - sizeof(struct drill_item_t) - sizeof(val)) {
 			pr_err("drill: save_val: oob offset %ld\n", offset);
 			return -EINVAL;
 		}
 
 		data_addr = (unsigned long *)(drill.items[n]->data + offset);
 		pr_notice("drill: save val 0x%lx to item %lu (0x%lx) at data offset %ld (0x%lx)\n",
-					val, n, (unsigned long)drill.items[n],
-					offset, (unsigned long)data_addr);
-		*data_addr = val;  /* No check, BAD BAD BAD */
+			  val, n, (unsigned long)drill.items[n], offset, (unsigned long)data_addr);
+		*data_addr = val; /* No check, BAD BAD BAD */
 
 		pr_notice("drill: item %lu dump:\n", n);
-		print_hex_dump(KERN_INFO, "drill: ", DUMP_PREFIX_ADDRESS,
-			       16, 1, drill.items[n], DRILL_ITEM_SIZE, false);
+		print_hex_dump(KERN_INFO, "drill: ", DUMP_PREFIX_ADDRESS, 16, 1, drill.items[n],
+			       DRILL_ITEM_SIZE, false);
 		break;
 
 	case DRILL_ACT_FREE:
-		pr_notice("drill: free item %lu (0x%lx)\n",
-					n, (unsigned long)drill.items[n]);
-		kfree(drill.items[n]);  /* No check, BAD BAD BAD */
+		pr_notice("drill: free item %lu (0x%lx)\n", n, (unsigned long)drill.items[n]);
+		kfree(drill.items[n]); /* No check, BAD BAD BAD */
 		break;
 
 	case DRILL_ACT_RESET:
@@ -128,8 +122,8 @@ static int drill_act_exec(long act,
 	return ret;
 }
 
-static ssize_t drill_act_write(struct file *file, const char __user *user_buf,
-						size_t count, loff_t *ppos)
+static ssize_t drill_act_write(struct file *file, const char __user *user_buf, size_t count,
+			       loff_t *ppos)
 {
 	ssize_t ret = 0;
 	char buf[DRILL_ACT_SIZE] = { 0 };
@@ -178,8 +172,8 @@ static const struct proc_ops drill_act_fops = {
 
 static int __init drill_init(void)
 {
-	drill.proc_entry = proc_create("drill_act", S_IWUSR | S_IWGRP | S_IWOTH,
-				       NULL, &drill_act_fops);
+	drill.proc_entry =
+		proc_create("drill_act", S_IWUSR | S_IWGRP | S_IWOTH, NULL, &drill_act_fops);
 	if (!drill.proc_entry) {
 		pr_err("failed to create /proc/drill_act\n");
 		return -ENOMEM;
@@ -203,8 +197,8 @@ static void __exit drill_exit(void)
 	proc_remove(drill.proc_entry);
 }
 
-module_init(drill_init)
-module_exit(drill_exit)
+module_init(drill_init);
+module_exit(drill_exit);
 
 MODULE_AUTHOR("Alexander Popov <alex.popov@linux.com>");
 MODULE_DESCRIPTION("The module for kernel exploiting experiments");

