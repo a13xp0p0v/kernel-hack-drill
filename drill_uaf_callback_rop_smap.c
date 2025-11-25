@@ -15,7 +15,8 @@
  *   - CONFIG_GDB_SCRIPTS=y
  *
  * 4) Ensure that these options are disabled:
- *   - CONFIG_RANDOM_KMALLOC_CACHES (to allow naive heap spraying for exploiting UAF)
+ *   - CONFIG_SLAB_BUCKETS (to allow naive heap spraying by setxattr for exploiting UAF)
+ *   - CONFIG_RANDOM_KMALLOC_CACHES (to allow naive heap spraying by setxattr for exploiting UAF)
  *   - CONFIG_RANDOMIZE_KSTACK_OFFSET_DEFAULT (to have a predictable stack pointer value)
  *
  * 5) Compile the kernel and run the VM with the needed settings:
