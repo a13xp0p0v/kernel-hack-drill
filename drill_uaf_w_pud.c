@@ -37,13 +37,13 @@
 #include <linux/limits.h>
 #include "drill.h"
 
-int do_cpu_pinning(void)
+int do_cpu_pinning(int cpu_n)
 {
 	int ret = 0;
 	cpu_set_t single_cpu;
 
 	CPU_ZERO(&single_cpu);
-	CPU_SET(0, &single_cpu);
+	CPU_SET(cpu_n, &single_cpu);
 
 	ret = sched_setaffinity(0, sizeof(single_cpu), &single_cpu);
 	if (ret != 0) {
@@ -51,7 +51,7 @@ int do_cpu_pinning(void)
 		return EXIT_FAILURE;
 	}
 
-	printf("[+] pinned to CPU #0\n");
+	printf("[+] pinned to CPU #%d\n", cpu_n);
 	return EXIT_SUCCESS;
 }
 
@@ -509,7 +509,7 @@ int main(void)
 	}
 	printf("[+] drill_act is opened\n");
 
-	if (do_cpu_pinning() == EXIT_FAILURE)
+	if (do_cpu_pinning(0) == EXIT_FAILURE)
 		goto end;
 
 	printf("[!] create new active slab, allocate objs_per_slab objects\n");
