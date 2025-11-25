@@ -440,6 +440,14 @@ int main(int argc, char **argv)
 	int act_fd = -1;
 	int spray_fd = -1;
 
+	/*
+	 * This program can run in two modes:
+	 * 1) If it is started by unprivileged user without command line arguments,
+	 *    it exploits UAF to overwrite core_pattern and then crashes to provoke
+	 *    core dump creation.
+	 * 2) If it is started by core dump helper (as root) with one command line
+	 *    argument, it invokes root shell.
+	 */
 	if (argc > 1) {
 		pid_t ppid = -1;
 
