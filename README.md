@@ -202,9 +202,20 @@ In that case, make sure that:
 1. After fetching a new kernel with `git` you have rebuilt your module.
 2. Your kernel path has not changed and the `KPATH` environment variable contains the correct path.
 
-#### Disabling the Linux kernel security hardening features
+#### Debugging PoC-exploits
 
-Basic `ret2usr` attack requires:
+First of all, check which kernel hardening mechanisms may disturb the attack.
 
- - Adding `pti=off nokaslr` boot arguments for the Linux kernel,
- - Running `qemu-system-x86_64` with `-cpu qemu64,-smep,-smap` arguments.
+Each PoC-exploit in `kernel-hack-drill` provides this information in the top comment.
+
+For example, a basic `ret2usr` attack with naive heap spraying requires the following:
+
+```
+ * 1) Compile the Linux kernel without:
+ *   - CONFIG_SLAB_BUCKETS
+ *   - CONFIG_RANDOM_KMALLOC_CACHES
+ *
+ * 2) Disable mitigations:
+ *   - run qemu with "-cpu qemu64,-smep,-smap".
+ *   - run the kernel with "pti=off nokaslr".
+```
