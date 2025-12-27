@@ -30,4 +30,4 @@ struct drill_item_t {
 
 #define DRILL_N 10240
 
-#endif	/* _DRILL_H */
+#endif /* _DRILL_H */
