@@ -27,6 +27,8 @@ License: GPL-3.0.
 
 __Have fun!__
 
+<p align="center"><img src="kernel-hack-drill-logo.jpg" width="50%"></p>
+
 ## Repositories
 
  - At GitHub: <https://github.com/a13xp0p0v/kernel-hack-drill>
