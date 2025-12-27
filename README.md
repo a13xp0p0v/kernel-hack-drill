@@ -17,6 +17,7 @@ __Contents:__
 | __drill_uaf_w_pipe_buffer.c__ | a basic a UAF exploit that writes into a freed `drill_item_t`; it performs a cross-cache attack and overwrites `pipe_buffer.flags` to implement the Dirty Pipe technique and gain LPE |
 | __drill_uaf_w_pte.c__ | a basic UAF exploit that writes to a freed `drill_item_t`; it performs a cross-allocator attack and overwrites a page table entry (PTE) to implement the Dirty Pagetable technique and gain LPE on `x86_64` |
 | __drill_uaf_w_pud.c__ | an improved version of `drill_uaf_w_pte.c` that overwrites an entry in Page Directory Pointer Table (PDPT), which is called Page Upper Directory (PUD) in the Linux kernel; that allows to implement the Dirty Pagetable attack via huge pages |
+| __drill_oob_w_pipe_buffer.c__ | basic OOBW exploit performs out-of-bounds write to overwrite `pipe_buffer`->page pointer with arbitrary value, allowing the attacker to perform LPE via overwriting `modprobe_path`. |
 
 N.B. Only basic exploit techniques here.
 
