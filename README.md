@@ -33,7 +33,7 @@ __Have fun!__
 
  - At GitHub: <https://github.com/a13xp0p0v/kernel-hack-drill>
  - At Codeberg: <https://codeberg.org/a13xp0p0v/kernel-hack-drill> (go there if something goes wrong with GitHub)
- - At GitFlic: <https://gitflic.ru/project/a13xp0p0v/kernel-hack-drill>
+ - At SourceCraft: <https://sourcecraft.dev/a13xp0p0v/kernel-hack-drill>
 
 [1]: https://bugs.chromium.org/p/project-zero/issues/detail?id=1792&desc=2
 
