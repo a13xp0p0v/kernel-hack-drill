@@ -216,11 +216,11 @@ int main(void)
 	char modprobe_path[KMOD_PATH_LEN] = { 0 };
 	char privesc_script_path[KMOD_PATH_LEN] = { 0 };
 	int act_fd = -1;
-	bool success = false;
-	char err_act[64];
 	char pipe_data[PIPE_CAPACITY];
 	int pipe_ret = -1;
 	int pipe_fds[PIPES_N][2];
+	char err_act[64];
+	bool success = false;
 
 	ret = get_modprobe_path(modprobe_path, sizeof(modprobe_path));
 	if (ret == EXIT_FAILURE)
