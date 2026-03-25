@@ -1,0 +1,50 @@
+name: code style check
+
+permissions:
+  contents: read
+
+on: [push, pull_request]
+
+jobs:
+  clang-format:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - name: Get the source code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-format git
+
+    - name: Verify .clang-format file exists
+      run: |
+        if [ ! -f ".clang-format" ]; then
+          echo "ERROR: .clang-format is not found"
+          exit 1
+        fi
+
+    - name: Apply clang-format
+      run: |
+        find . -type f \( -name "*.c" -o -name "*.h" \) -exec clang-format -i {} \;
+
+    - name: Generate diff
+      run: |
+        git diff > style.patch
+
+    - name: Check for the code style violations
+      run: |
+        if [ -s style.patch ]; then
+          echo "ERROR: fix the code style please, see style.patch"
+          exit 1
+        fi
+
+    - name: Upload style.patch on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: style.patch
+        path: style.patch

