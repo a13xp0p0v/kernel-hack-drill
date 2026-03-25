@@ -52,4 +52,3 @@ jobs:
       with:
         name: style.patch
         path: style.patch
-        retention-days: 7
