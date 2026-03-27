@@ -330,9 +330,9 @@ int main(void)
 
 	for (int i = SPRAY_PARTIAL; i < PIPES_N; i++) {
 		/*
- 		 * A `drill_item` object allocated in kmalloc-96 cache. It is known that the size of the
- 		 * `pipe_buffer' is 40 bytes, which means that we need two of them to reach kmalloc-96.
- 		 */
+		 * A `drill_item` object allocated in kmalloc-96 cache. It is known that the size of the
+		 * `pipe_buffer' is 40 bytes, which means that we need two of them to reach kmalloc-96.
+		 */
 		ret = fcntl(pipe_fds[i][1], F_SETPIPE_SZ, PIPE_CAPACITY);
 		if (ret != PIPE_CAPACITY) {
 			perror("[-] fcntl");
