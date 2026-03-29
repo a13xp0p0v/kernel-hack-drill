@@ -16,12 +16,15 @@
  *   - CONFIG_DEBUG_INFO_DWARF5=y
  *   - CONFIG_GDB_SCRIPTS=y
  *
- * 4) Ensure that these options are disabled:
- *   - CONFIG_RANDOM_KMALLOC_CACHES (to allow naive heap spraying)
+ * 4) Ensure that the CONFIG_RANDOM_KMALLOC_CACHES option is not set to allow
+ *    the drill_item_t and pipe_buffer objects to live in the same slab cache.
  *
- * 5) Compile the kernel and run the VM with the needed settings:
- *   - Run qemu with "-cpu qemu64,+smep,+smap"
- *   - Run the kernel with "pti=on nokaslr"
+ * 5) However, you may compile the Linux kernel with slab freelist randomization enabled
+ *    (CONFIG_SLAB_FREELIST_RANDOM=y). This PoC can bypass that hardening feature.
+ *
+ * 6) Run the kernel with disabled KASLR (use the nokaslr boot parameter).
+ *
+ * This PoC overwrites modprobe_path and gains LPE.
  */
 
 #define _GNU_SOURCE
