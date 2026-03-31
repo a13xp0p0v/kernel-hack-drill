@@ -14,9 +14,7 @@
  * You may also compile the kernel with CONFIG_PAGE_TABLE_CHECK and CONFIG_TRANSPARENT_HUGEPAGE,
  * since this PoC can bypass them combined.
  *
- * Requirements:
- *  1) Enable CONFIG_CRYPTO_USER_API to exploit the modprobe_path LPE technique
- *  2) Ensure that KERNEL_TEXT_PATTERNS contains the first bytes of _text of your kernel
+ * Ensure that KERNEL_TEXT_PATTERNS contains the first bytes of _text of your kernel.
  */
 
 #define _GNU_SOURCE

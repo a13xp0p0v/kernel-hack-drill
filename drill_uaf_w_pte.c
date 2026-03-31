@@ -15,9 +15,8 @@
  * since this PoC can bypass it.
  *
  * Requirements:
- *  1) Enable CONFIG_CRYPTO_USER_API to exploit the modprobe_path LPE technique
- *  2) Disable KASLR and update the MODPROBE_PATH_ADDR below
- *  3) See "Kernel code" in /proc/iomem and update KERNEL_TEXT_PHYS_ADDR
+ *  1) Disable KASLR and update the MODPROBE_PATH_ADDR below
+ *  2) See "Kernel code" in /proc/iomem and update KERNEL_TEXT_PHYS_ADDR
  */
 
 #define _GNU_SOURCE
