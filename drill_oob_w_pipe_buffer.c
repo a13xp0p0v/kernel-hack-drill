@@ -409,6 +409,12 @@ int main(void)
 	result = EXIT_SUCCESS;
 
 end:
+	if (act_fd >= 0) {
+		ret = close(act_fd);
+		if (ret != 0)
+			perror("[-] close act_fd");
+	}
+
 	for (i = 0; i < PIPES_N; i++) {
 		if (pipe_fds[i][0] >= 0) {
 			if (close(pipe_fds[i][0]) < 0)
@@ -418,12 +424,6 @@ end:
 			if (close(pipe_fds[i][1]) < 0)
 				perror("[-] close pipe");
 		}
-	}
-
-	if (act_fd >= 0) {
-		ret = close(act_fd);
-		if (ret != 0)
-			perror("[-] close act_fd");
 	}
 
 	if (result == EXIT_FAILURE)
