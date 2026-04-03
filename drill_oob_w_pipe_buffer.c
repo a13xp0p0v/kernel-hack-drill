@@ -92,6 +92,11 @@ int increase_fd_limit(void)
 		return EXIT_FAILURE;
 	}
 
+	if (rlim.rlim_cur != rlim.rlim_max) {
+		printf("[-] failed to increase max file descriptor number\n");
+		return EXIT_FAILURE;
+	}
+
 	printf("[+] increased max file descriptor number to %ld\n", rlim.rlim_cur);
 	return EXIT_SUCCESS;
 }
