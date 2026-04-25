@@ -9,6 +9,8 @@
  *   - CONFIG_SLAB_BUCKETS
  *   - CONFIG_RANDOM_KMALLOC_CACHES
  *
+ * Ensure that CONFIG_CHECKPOINT_RESTORE=y to allow calling msgrcv() with the MSG_COPY flag.
+ *
  * This PoC performs out-of-bounds reading of the kernel memory using a corrupted msg_msg.
  */
 
