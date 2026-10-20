@@ -326,7 +326,7 @@ int get_modprobe_path(char *buf, size_t buf_size)
 }
 
 /*
- * The first 16 bytes of kernel _text. Collected on:
+ * The first 16 bytes of kernel _text. Must be collected on a live boot via gdb, tested on:
  *  1. Dozens of v6.x.x defconfig kernels,
  *  2. Ubuntu 6.12.28, 6.10.11, 6.6.89,
  *  3. Debian 6.12.25, 6.11.6, 6.1.10.
@@ -338,6 +338,23 @@ int get_modprobe_path(char *buf, size_t buf_size)
 	  "\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90", \
 	  "\xfc\x0f\x01\x15\xa0\xdc\x77\x03\xb8\x10\x00\x00\x00\x8e\xd8\x8e", \
 	  "\x48\x8d\x25\x51\x3f\xa0\x01\x48\x8d\x3d\xf2\xff\xff\xff\xb9\x01" }
+
+/*
+ * Some instructions contain a 4-byte displacement:
+ *
+ *   48 8d 25 XX XX XX XX - lea rsp, [rip + disp32]
+ *   48 8d 3d XX XX XX XX - lea rdi, [rip + disp32]
+ *   0f 01 15 XX XX XX XX - lgdt [rip + disp32]
+ *
+ * Those bytes may vary between kernel builds and even boots
+ */
+
+#define KERNEL_TEXT_MASKS         \
+	{ "xxxxxx????xxxxxx",    \
+	  "xxxxxx????xxx???",    \
+	  "xxxxxxxxxxxxxxxx",    \
+	  "xxxx????xxxxxxxx",    \
+	  "xxx????xxx????xx" }
 /* clang-format on */
 
 #define KERNEL_TEXT_PATTERN_LEN 16
@@ -345,14 +362,17 @@ int get_modprobe_path(char *buf, size_t buf_size)
 int is_kernel_text(void *addr)
 {
 	char *patterns[] = KERNEL_TEXT_PATTERNS;
+	char *masks[] = KERNEL_TEXT_MASKS;
 	size_t n = sizeof(patterns) / sizeof(char *);
 	size_t i = 0;
 	size_t j = 0;
-	char *bytes = addr;
+	unsigned char *bytes = addr;
 
 	for (i = 0; i < n; i++) {
 		for (j = 0; j < KERNEL_TEXT_PATTERN_LEN; j++) {
-			if (bytes[j] != patterns[i][j])
+			if (masks[i][j] == '?')
+				continue;
+			if (bytes[j] != (unsigned char)patterns[i][j])
 				break;
 		}
 		if (j == KERNEL_TEXT_PATTERN_LEN)
