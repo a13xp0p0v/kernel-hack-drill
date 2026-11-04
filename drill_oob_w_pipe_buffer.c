@@ -303,6 +303,11 @@ int main(void)
 
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
 
+	for (i = 0; i < PIPES_N; i++) {
+		pipe_fds[i][0] = -1;
+		pipe_fds[i][1] = -1;
+	}
+
 	ret = increase_fd_limit();
 	if (ret == EXIT_FAILURE)
 		goto end;
@@ -325,11 +330,6 @@ int main(void)
 
 	if (do_cpu_pinning(0) == EXIT_FAILURE)
 		goto end;
-
-	for (i = 0; i < PIPES_N; i++) {
-		pipe_fds[i][0] = -1;
-		pipe_fds[i][1] = -1;
-	}
 
 	pipe_data = malloc(PAGE_SIZE);
 	if (pipe_data == NULL) {
