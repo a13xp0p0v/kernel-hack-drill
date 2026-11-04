@@ -424,9 +424,11 @@ pid_t get_parent_pid(pid_t child_pid)
 	ret = fscanf(stat_stream, "%d %s %c %d ", &pid, comm, &state, &ppid);
 	if (ret != 4) {
 		printf("[-] parsing /proc/pid/stat failed\n");
+		fclose(stat_stream);
 		return -1;
 	}
 
+	fclose(stat_stream);
 	printf("[+] got info about the dumped process: %d %s %c %d\n", pid, comm, state, ppid);
 	return ppid;
 }
