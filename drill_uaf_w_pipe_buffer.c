@@ -202,6 +202,7 @@ int prepare_pipes(void)
 	file_bkp_s = fopen("/tmp/passwd.bkp", "w");
 	if (file_bkp_s == NULL) {
 		perror("[-] fopen 2");
+		fclose(file_s);
 		return EXIT_FAILURE;
 	}
 
