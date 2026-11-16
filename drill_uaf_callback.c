@@ -41,8 +41,8 @@
 #define INIT_TASK_PTR			0xffffffff82a0c940UL
 /* clang-format on */
 
-typedef int __attribute__((regparm(3))) (*_commit_creds)(unsigned long cred);
-typedef unsigned long __attribute__((regparm(3))) (*_prepare_kernel_cred)(unsigned long cred);
+typedef int (*_commit_creds)(unsigned long cred);
+typedef unsigned long (*_prepare_kernel_cred)(unsigned long cred);
 
 _commit_creds commit_creds = (_commit_creds)COMMIT_CREDS_PTR;
 _prepare_kernel_cred prepare_kernel_cred = (_prepare_kernel_cred)PREPARE_KERNEL_CRED_PTR;
