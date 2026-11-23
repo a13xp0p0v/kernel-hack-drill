@@ -166,7 +166,7 @@ unsigned int get_max_phys_gib(void)
 		}
 
 		buf[bytes] = 0;
-		if (strcmp(buf, "System RAM\n") != 0)
+		if (strncmp(buf, "System RAM\n", sizeof("System RAM\n")) != 0)
 			continue;
 
 		snprintf(path, sizeof(path), "/sys/firmware/memmap/%d/end", i);
