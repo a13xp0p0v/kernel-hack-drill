@@ -422,6 +422,7 @@ pid_t get_parent_pid(pid_t child_pid)
 	}
 
 	ret = fscanf(stat_stream, "%d %s %c %d ", &pid, comm, &state, &ppid);
+	fclose(stat_stream);
 	if (ret != 4) {
 		printf("[-] parsing /proc/pid/stat failed\n");
 		return -1;
